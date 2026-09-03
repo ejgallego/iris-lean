@@ -1,6 +1,7 @@
 name = "iris"
 defaultTargets = ["Iris"]
 testDriver = "IrisTest"
+enableArtifactCache = true
 
 [[require]]
 name = "Qq"
@@ -11,6 +12,11 @@ rev = "v4.32.0"
 name = "batteries"
 scope = "leanprover-community"
 rev = "v4.32.0"
+
+[[require]]
+name = "lean_vir"
+git = "https://github.com/ejgallego/lean-vir.git"
+rev = "ea9ba047aef4bc6cbb24c24d74a51af50dcce66c"
 
 [[lean_lib]]
 name = "Iris"
