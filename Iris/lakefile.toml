@@ -2,6 +2,7 @@ name = "iris"
 defaultTargets = ["Iris"]
 testDriver = "IrisTest"
 builtinLint = true
+enableArtifactCache = true
 
 [[require]]
 name = "Qq"
@@ -18,6 +19,11 @@ rev = "v4.35.0"
 [[lean_lib]]
 name = "IrisStepIndex"
 roots = ["IrisStepIndex.Registry", "IrisStepIndex.Elab"]
+
+[[require]]
+name = "lean_vir"
+git = "https://github.com/ejgallego/lean-vir.git"
+rev = "ea9ba047aef4bc6cbb24c24d74a51af50dcce66c"
 
 [[lean_lib]]
 name = "Iris"

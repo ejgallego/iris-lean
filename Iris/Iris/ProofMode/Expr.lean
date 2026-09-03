@@ -607,6 +607,15 @@ structure IrisGoal where
 
 def isIrisGoal (expr : Expr) : Bool := isAppOfArity expr ``Entails' 4
 
+/--
+Recognize an already-active Iris proof-mode goal from its elaborated target.
+
+This is the canonical read-only boundary for displays and other tooling: it
+matches the `Entails'` marker installed by proof mode and reconstructs the typed
+`IrisGoal` and `Hyps` tree. It does not enter proof mode and does not parse
+pretty-printed syntax. Callers reading a metavariable target should enter its
+local context and instantiate metavariables first.
+-/
 def parseIrisGoal? (expr : Expr) : Option IrisGoal := do
   -- remove top-level metadata when matching on the goal
   let expr := expr.consumeMData

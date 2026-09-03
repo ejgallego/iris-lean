@@ -4,6 +4,7 @@ keywords = ["math"]
 defaultTargets = ["IrisMath"]
 testDriver = "IrisMathTest"
 builtinLint = true
+enableArtifactCache = true
 
 [leanOptions]
 pp.unicode.fun = true 
