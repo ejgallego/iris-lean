@@ -1,9 +1,12 @@
 # Iris Proof-Mode Widget Design
 
-- Status: opt-in typed-RPC prototype implemented; editor acceptance pending
+- Status: opt-in native-RPC/subterm prototype implemented; basic editor use confirmed, broader acceptance pending
 - Task id: `proof-mode-widget`
 - Branch: `feat/proof-mode-widget`
 - Date: 2026-09-03
+
+Contributor entry point: [maintainer guide](widget-maintainer-guide.md).
+Pinned-dependency findings: [VIR API review](vir-widget-api-review.md).
 
 ## 1. Executive summary
 
@@ -21,15 +24,21 @@ Only proposition leaves are pretty-printed, after their structural role is
 already known. The Lean-authored VIR component decodes that model and renders
 it with React.
 
-Version 2 adds a deliberately narrow interaction: each complete rendered Iris
-proposition is a keyboard-focusable term control. Selecting it resolves VIR
-reference metadata at the current editor position and reveals a compact type
-and source-position detail line. It does not add tactic buttons, replace Lean's
-normal goal view, or claim subterm hover support that the typed-RPC bridge does
-not yet preserve.
+Version 3 preserves Lean's tagged proposition rendering. Keyboard-focusable
+subterm controls inspect actual expressions under their saved binder and
+metavariable contexts. A native server snapshot reference owns that context;
+display IDs are not semantic references. Inspection remains read-only and
+click/Enter activated, with an inline expression/type result—not full infoview
+hover popups, definition navigation, or mathematical typesetting.
 
-The opt-in prototype targets Lean 4.32.2 and pins the published VIR 4.32
-module-system checkpoint `ea9ba047`, based on PR #166 at `e88f98d`. The
+The opt-in prototype targets Lean 4.32.2. The review branch pins VIR
+checkpoint `8032fd3`, adding two [shell fixes](widget-shell-errors.md) over
+the `be6931c` compatibility commit directly above PR #171 at `8750e1b`;
+the exact pin is published on
+[`fix/iris-widget-errors`](https://github.com/ejgallego/lean-vir/tree/fix/iris-widget-errors).
+It supersedes the previous
+`ea9ba047` checkpoint based on PR #166 at `e88f98d`. See the
+[refresh record](vir-v432-refresh.md) for exact identities and validation. The
 matching VIR runtime and exact widget package build locally. Production rollout
 still needs a deterministic
 downstream location for the matching WASM runtime; that packaging concern does
@@ -70,7 +79,7 @@ Relevant sources:
 The generic VIR `Surface` flattens goal rendering too early for reliable Iris
 classification. General Lean/Iris syntax is extensible, so reconstructing an
 `IrisGoal` from that text would be both incomplete and coupled to presentation.
-VIR's typed RPC widget path avoids this limitation: Iris can map the original
+VIR's native RPC path avoids this limitation: Iris can map the original
 typed server goal to its own display domain before the browser boundary.
 
 ## 3. Users and jobs to be done
@@ -126,8 +135,8 @@ typed server goal to its own display domain before the browser boundary.
 - The target remains readable at a 280 px panel width without page-level
   horizontal scrolling.
 - All controls are keyboard reachable and expose accessible names and state.
-- Selecting a rendered proposition reveals its server-rendered type and current
-  source position without mutating the proof.
+- Selecting a tagged subterm reveals its expression and type in the saved
+  elaboration context without mutating the proof.
 - Multiple goal cards have stable keys and independent collapse state.
 - The custom RPC payload round-trips through JSON and mounts in the VIR browser
   runtime.
@@ -144,9 +153,9 @@ typed server goal to its own display domain before the browser boundary.
    and Iris-variable ids, not display strings.
 5. **Theme-native and accessible.** Structure and labels carry meaning; color
    only reinforces it.
-6. **Progressive capability.** `RenderedTerm` carries whole-term reference
-   metadata and can later gain semantic spans without changing context
-   classification.
+6. **Progressive capability.** `RenderedTerm` carries canonical tagged Lean
+   rendering. Mathematical layout may enrich it without changing context
+   classification or inventing semantic references.
 
 ## 6. Information architecture
 
@@ -180,6 +189,7 @@ structure RenderedTerm where
   text : String
   typeText : String
   summary : String
+  code : Lean.Widget.TaggedText Nat
 
 structure DisplayHypothesis where
   id : String
@@ -196,16 +206,17 @@ structure DisplayGoal where
   target : RenderedTerm
 
 structure WidgetState where
-  version : Nat := 2
+  version : Nat := 3
   goals : Array DisplayGoal
 ```
 
-The domain contains only facts the display needs. `RenderedTerm` is a structure,
-rather than a bare string, so whole propositions can be resolved through VIR
-now and a future version can add tagged subexpression spans without changing
-`DisplayHypothesis` and `DisplayGoal` conceptually.
+The domain contains only facts the display needs. Each tag index addresses a
+saved contextual expression in the associated snapshot. The tree retains all
+tag nesting; the current renderer uses innermost-tagged leaves to avoid nested
+buttons. Untagged text remains readable. Repeated spellings have distinct
+occurrence indices.
 
-`WidgetState.version` is `2` and makes incompatible future wire-format changes
+`WidgetState.version` is `3` and makes incompatible future wire-format changes
 explicit. The server and widget package are currently built together, so the
 prototype needs no migration path.
 
@@ -224,8 +235,9 @@ goal text.
 6. Preserve Iris's existing display order and duplicate-name convention.
 7. Pretty-print each already-classified proposition with `delabIProp`; do not
    inspect the resulting text.
-8. Render each proposition's type and attach a stable whole-term reference id
-   derived from the metavariable/`IVarId` name.
+8. Preserve the tagged pretty-printer tree and retain each term's expression,
+   local context and elaboration context in the server snapshot. Metavariable/
+   `IVarId` names identify display rows only.
 9. Partition the mapped rows into persistent and spatial arrays.
 
 `Iris.ProofMode.parseIrisGoal?` is the appropriate existing interface here. It
@@ -236,26 +248,34 @@ Unlike `startProofMode`, it does not transform the proof; unlike
 keeps the required metavariable-context entry and target instantiation adjacent
 to this call so the provenance of every accepted `DisplayGoal` is visible.
 
-The current proposition payload calls `ppExprTagged` and strips tags before
-serialization. This is an intentional leaf-formatting boundary, not parsing.
-The whole-term id/type/summary supports a small reference interaction today; a
-later revision can retain normalized tagged subexpression references.
+The mapper calls `ppExprTagged`. `stripTags` supplies canonical fallback text,
+while the tagged tree is also retained, replacing term-info tags with
+snapshot-relative indices. The internal delaborator info types are consumed
+only by this adapter; neither raw expressions nor info nodes enter JSON.
+`SnapshotReply` contains the versioned display JSON string plus a native
+`WithRpcRef Snapshot`. VIR passes the exact client-registered reference back
+to `inspect`; it never routes it through the legacy recursive `RpcJson` bridge.
 
 ## 9. Interaction design
 
 ### Primary flow
 
 1. The user moves the cursor into a proof.
-2. VIR calls `Iris.ProofMode.Widget.state` with the cursor position.
-3. The Lean server returns a versioned `WidgetState` derived from typed goals.
-4. The VIR shell converts that JSON value to `RpcJson`, creates the exported
-   Lean component once, and passes the component and input to the exported
-   Lean mount function.
+2. VIR supplies its native `Surface` and position-specific RPC session.
+3. A Lean-authored React effect calls `Iris.ProofMode.Widget.state` and receives
+   versioned display data plus an opaque snapshot reference.
+4. The client decodes the display data and constructs one view for that
+   snapshot. The native reference is retained unchanged alongside the session.
 5. The Lean-authored React component renders persistent and spatial rows above
    a judgment rule and target.
 6. The user may independently collapse or expand each goal card.
-7. Selecting any proposition asks VIR to resolve its reference at the current
-   editor position and expands an inline `type · file:line:column` detail.
+7. Selecting a tagged span calls `inspect` with its owning snapshot and index,
+   then shows the saved expression/type. Closing, reselecting, replacing the
+   snapshot, or unmounting retires the corresponding response handler. Both
+   late success and late failure are ignored. Pending requests are not aborted.
+
+New snapshots conservatively reset term selection and goal collapse state;
+there is no guessed correspondence across snapshots based on names or text.
 
 ### Outside proof mode
 
@@ -337,7 +357,7 @@ fallbacks. Every accented section also has a label and glyph.
 - `TargetSection : Component RenderedTerm`
   - renders the judgment rule, turnstile, and target.
 - `InteractiveTerm : Component InteractiveTermProps`
-  - owns selected/detail state and resolves the whole-term VIR reference.
+  - owns selected/detail state and inspects snapshot-bound contextual subterms.
 
 Goal cards are keyed by metavariable id. Hypothesis rows are keyed by
 `IVarId`; display names alone are not assumed unique.
@@ -359,7 +379,7 @@ Goal cards are keyed by metavariable id. Hypothesis rows are keyed by
 | Duplicate user names | Use Iris's disambiguated display names and distinct ids |
 | Very long name | Wrap without overlapping proposition |
 | Cursor-only update | Re-render data; stable keys retain matching card state |
-| Selected proposition | Inline server-rendered type and current source position |
+| Selected subterm | Inline expression/type from its retained elaboration context |
 | Widget-code update | VIR package revision reload; local UI state may reset |
 
 ## 14. Accessibility
@@ -386,10 +406,10 @@ Lean file worker / InteractiveGoal
               │ typed IrisGoal / Hyps
               ▼
       toDisplayGoal : IrisGoal → DisplayGoal
-              │ versioned JSON through custom server RPC
+              │ versioned display JSON + opaque native snapshot reference
               ▼
-        VIR ReactRpcWidget shell
-              │ decoded WidgetState
+        Lean-authored native-RPC client (VIR Surface session)
+              │ decoded WidgetState + retained semantic context
               ▼
       Lean-authored VIR/React components
               │
@@ -409,7 +429,7 @@ generic shell supplied by VIR.
    first visual prototype, then removed. Even a strict parser is coupled to
    formatting and cannot scale to extensible general syntax.
 3. **Build an Iris-specific JavaScript widget shell.** Rejected because VIR's
-   generic typed-RPC shell already provides the boundary and the application is
+   generic Surface shell already provides the boundary and the application is
    intended to remain Lean-authored.
 4. **Encode Iris resources as ordinary Lean locals.** Rejected because it would
    distort the proof state and expose proof-mode implementation machinery.
@@ -419,6 +439,7 @@ generic shell supplied by VIR.
 ```text
 Iris/Iris/ProofMode/Widget.lean          -- Lean/VIR components and activation
 Iris/Iris/ProofMode/Widget/Model.lean    -- versioned display/RPC domain
+Iris/Iris/ProofMode/Widget/Client.lean   -- native RPC, decoding, effect lifetimes
 Iris/Iris/ProofMode/Widget/Rpc.lean      -- IrisGoal-to-domain mapper and RPC
 Iris/Iris/ProofMode/Widget/Style.lean    -- VS Code token helpers/styles
 Iris/IrisTest/ProofMode/Widget.lean      -- JSON and elaborated-goal mapping tests
@@ -441,8 +462,10 @@ acceptance.
 ## 16. Toolchain and asset decisions
 
 - Keep Iris on Lean 4.32.2.
-- Keep VIR pinned to the published `ea9ba047` checkpoint rather than a moving
-  branch.
+- Keep VIR pinned to an exact compatible checkpoint rather than a moving
+  branch. The current `8032fd3` pin is published on `fix/iris-widget-errors`;
+  `ea9ba047` is the previous published pin. Source availability does not replace
+  building the matching runtime.
 - Build the VIR Lean library, IR package, JavaScript shell, and WASM runtime from
   compatible revisions.
 - Do not check generated JavaScript or WASM binaries into Iris.
@@ -455,6 +478,11 @@ needs a VIR-supported downstream target or an Iris Lake target that stages the
 matching runtime at a deterministic workspace path.
 
 ## 17. Validation strategy and current evidence
+
+The historical checks below describe the version-2 prototype and PR checkpoint.
+The native-RPC migration is recorded in [the migration note](widget-native-rpc.md).
+The [2026-09-09 refresh record](vir-v432-refresh.md) records the new format-11
+runtime/package build, downstream tests, and remaining manual acceptance.
 
 ### Pure and Lean integration checks
 
@@ -502,8 +530,37 @@ matching runtime at a deterministic workspace path.
 3. Establish a deterministic downstream runtime asset target.
 4. Complete manual editor and accessibility acceptance.
 5. Measure import/build/runtime cost before considering global registration.
-6. Extend `RenderedTerm` from whole-term references to semantic subexpression
-   spans only when the RPC and VIR rendering APIs preserve them end-to-end.
+6. Preserve contextual tags and support read-only subterm inspection. Version 3
+   implements the first slice; richer hover/navigation and selective state
+   preservation across snapshots remain separate work.
+7. Explore mathematical typesetting through a reusable VIR KaTeX component or
+   an extended renderer, guided by the
+   [paper notation showcase](iris-notation-showcase.md). Preserve semantic
+   references and the canonical Lean rendering through this extension.
+
+### Design work while VIR settles (2026-09-08)
+
+Keep the current VIR checkpoint during its cleanup. The agreed design work is:
+
+- Select representative proof sequences with the Iris authors, including long
+  resources, binders/modalities, and multiple goals.
+- Review layout and retained UI state across successive proof states.
+- Specify semantic subexpression spans and snapshot-bound references before
+  implementing richer hover, selection, or navigation.
+- Use published Iris notation as a showcase for an eventual mathematical
+  renderer. Compare paper typography, current Lean notation, and proposed
+  interactive presentation on a small set of attributed examples.
+
+The showcase can include manually authored design specimens. Mark those as
+such; live fixtures must name the corresponding Lean declarations and derive
+their state through the existing typed mapper. Selecting a paper does not
+assume its development is available in iris-lean.
+
+The first [offline notation gallery](notation-gallery/index.html) now provides
+four manually authored studies, including a two-position resource split. The
+[presentation contract proposal](iris-term-presentation.md) separates visual
+nodes, semantic occurrences, source copying, and snapshot-bound references.
+Neither changes the production Lean widget, wire version, or VIR pin.
 
 ## 19. Risks and mitigations
 
@@ -514,13 +571,13 @@ matching runtime at a deterministic workspace path.
 | Widget duplicates infoview content | Render only Iris contexts and target |
 | Global widget adds noise | Empty fragment outside proof mode; opt-in rollout first |
 | Missing/mismatched WASM | Pin compatible revisions and add a deterministic asset target |
-| Term control overpromises infoview parity | Label it as whole-term details; defer hover popups and subexpression refs |
+| Term control overpromises infoview parity | Label it as contextual inspection; defer hover popups and navigation |
 | Long contexts become too tall | Compact rows and per-goal collapse |
-| React state churn | Stable goal/hypothesis ids and keyed components |
+| React state churn | Stable keys within a snapshot; conservative reset on replacement |
 
 ## 20. Review decisions
 
-1. Version 2 is a companion panel with whole-term, read-only detail controls.
+1. Version 3 is a companion panel with contextual, read-only subterm controls.
 2. Structural input is the typed `IrisGoal`; the text parser and raw fallback
    are removed.
 3. The target domain is versioned and independent of both `Hyps` and React.
@@ -529,6 +586,9 @@ matching runtime at a deterministic workspace path.
 6. Persistent/spatial glyphs, a judgment rule, target prominence, multi-goal
    cards, stable identities, theme use, and accessibility follow the reviewed
    wireframes.
+7. The next design iteration uses real proof sequences and a paper-notation
+   showcase. Mathematical typesetting is a future rendering extension; the
+   choice between KaTeX and a richer renderer remains open.
 
 Staging the runtime deterministically and completing manual editor acceptance
 remain rollout work rather than changes to the interaction model.
