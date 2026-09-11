@@ -17,12 +17,24 @@ Do this before the meeting, not during it:
 
 ```bash
 cd /home/egallego/lean/iris-lean/.worktrees/proof-mode-widget/Iris
-env LAKE_CACHE_DIR=/home/egallego/.cache/mathlib \
+env LAKE_ARTIFACT_CACHE=true LAKE_CACHE_DIR=/home/egallego/.cache/mathlib LAKE_RESTORE_ARTIFACTS=true \
   lake build IrisTest.ProofMode.WidgetDemo +Iris.ProofMode.Widget:vir
 ```
 
+Lake's artifact cache stays enabled. `LAKE_RESTORE_ARTIFACTS=true` materializes
+cached module files for VIR's standalone package generator, which currently
+does not consume Lake's artifact-path mapping. This is not a cache invalidation
+or a downloader workaround. See the [local 4.32 refresh record](vir-v432-refresh.md).
+
+The current VIR pin `8032fd3` (PR #171/Lean 4.32.2 plus shell fixes) is published
+on [`fix/iris-widget-errors`](https://github.com/ejgallego/lean-vir/tree/fix/iris-widget-errors).
+The command above assumes the existing worktree's matching runtime has already
+been built. A fresh clone must build the Lean 4.32.2 Wasm separately; fetching
+the dependency does not supply `web/public/vir-upstream.wasm`. See the
+[runtime build record](vir-v432-refresh.md#pr-171-refresh--2026-09-10).
+
 Open this `Iris` directory as the VS Code workspace, restart the Lean server,
-and open `IrisTest/ProofMode/WidgetDemo.lean`. Check both pause points once and
+and open `IrisTest/ProofMode/WidgetDemo.lean`. Check the context, split and binder pause points and
 leave the editor/server warm.
 
 ## Suggested live flow
@@ -55,10 +67,11 @@ Message: this is a normal typed Lean function constructing React nodes. Styles,
 ARIA properties, keyed children, and event handlers are all authored in Lean;
 VIR supplies the browser bindings and runtime.
 
-Click the target once. Its type and current file position appear directly below
-the term. Explain that this uses VIR's host/RPC bridge from a Lean event handler;
-the current prototype resolves complete propositions, while true tagged-subterm
-hover popups remain a follow-up.
+Click `P`, `R`, or `S` in the target, or focus a span and press Enter. Its actual
+expression/type appears inline. In the quantified example, pause after `istart`
+and inspect `n` or `m` before introduction: the saved binder context supplies
+their types. Use × to close inspection. These are contextual subterm controls,
+not full infoview hover popups or jump-to-definition.
 
 Then show `createComponent`, `mount`, and `widgetProps` near the end of the
 file.
@@ -80,8 +93,10 @@ only a rendered leaf; it is never parsed.
 Move the cursor to just after `isplitr`. Two Iris goals appear. Expand and
 collapse the second card.
 
-Message: the component and its local state execute through VIR; stable Lean
-goal ids are used as React keys.
+Message: the component and its local state execute through VIR. Keys are stable
+within a snapshot; a new snapshot resets selection and collapse state to avoid
+reattaching references by spelling. `Client.lean` uses native Promises and
+effect cleanup to ignore late success and failure.
 
 ### 6. Invite Iris feedback — 2 minutes
 
@@ -89,7 +104,7 @@ Ask the authors:
 
 - Which real proof state should replace this generic `P Q R S` example?
 - Is persistent/spatial/target the right information hierarchy?
-- Which interaction should follow whole-term details: tagged subterm spans,
+- Which interaction should follow contextual inspection: hover popups,
   source navigation, modality information, or something else?
 - Is the denser layout now close to normal Iris working density?
 
