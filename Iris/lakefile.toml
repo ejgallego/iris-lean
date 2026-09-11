@@ -23,7 +23,7 @@ roots = ["IrisStepIndex.Registry", "IrisStepIndex.Elab"]
 [[require]]
 name = "lean_vir"
 git = "https://github.com/ejgallego/lean-vir.git"
-rev = "ea9ba047aef4bc6cbb24c24d74a51af50dcce66c"
+rev = "8032fd34add0b75d4f59c82382e2a57b4c2522a4"
 
 [[lean_lib]]
 name = "Iris"

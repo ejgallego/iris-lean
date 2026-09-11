@@ -17,6 +17,7 @@ show_panel_widgets [local Lean.Vir.Infoview.widget with Iris.ProofMode.Widget.wi
 
 /-- Outside Iris proof mode, the widget deliberately renders nothing. -/
 example (n : Nat) : n = n := by
+  -- widget-position-ordinary
   rfl
 
 /--
@@ -28,11 +29,21 @@ Demo state:
 example [BI PROP] (P Q R S : PROP) :
     □ P ∗ □ (Q -∗ R) ⊢ Q -∗ S -∗ P ∗ R ∗ S := by
   iintro ⟨#HP, #HQR⟩ HQ HS
+  -- widget-position-contexts
   isplitr [HQ HS]
+  -- widget-position-split
   · iexact HP
   · isplitr [HS]
     · iapply HQR
       iexact HQ
     · iexact HS
+
+/-- Inspect `n` and `m` inside the binder bodies, before introducing them. -/
+example [BI PROP] (A : Nat → Nat → PROP) :
+    ⊢ (∀ n : Nat, ∀ m : Nat, A n m -∗ A n m) := by
+  istart
+  -- widget-position-binders
+  iintro %n %m H
+  iexact H
 
 end IrisTest.ProofMode.WidgetDemo

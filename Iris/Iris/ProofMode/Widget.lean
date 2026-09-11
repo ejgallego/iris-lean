@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Iris.ProofMode.Widget.Model
+public import Iris.ProofMode.Widget.Client
 public import Iris.ProofMode.Widget.Style
 public meta import Iris.ProofMode.Widget.Rpc
 public import Vir.Attributes
@@ -12,6 +13,15 @@ public meta import Vir.Attributes
 public import Vir.Infoview
 public meta import Vir.Infoview
 public import Vir.ProofWidgets
+
+/-!
+# Iris proof-mode view
+
+Read `Model.lean` for the display domain and `Rpc.lean` for its typed Iris
+provenance. This module owns presentation only; `Client.lean` owns native RPC
+and hook lifetimes. `Vir.ProofWidgets.Html` constructs client-side React nodes,
+not the serialized server-side `ProofWidgets.Html` type.
+-/
 
 public section
 
@@ -21,13 +31,9 @@ open Lean.Vir
 open Lean.Vir.Browser (DomM)
 open Lean.Vir.ProofWidgets
 
-private def safeId (id : String) : String :=
-  id.map fun char =>
-    if char.isAlphanum || char == '-' || char == '_' then char else '-'
-
+/-- DOM identity is presentation-local, separate from semantic/display IDs. -/
 private def goalDomId (goal : DisplayGoal) : String :=
-  let suffix := if goal.id.isEmpty then toString goal.index else safeId goal.id
-  "iris-proof-mode-goal-" ++ suffix
+  "iris-proof-mode-goal-" ++ toString goal.index
 
 private def kindLabel : ContextKind → String
   | .persistent => "Persistent"
@@ -40,67 +46,64 @@ private def kindGlyph : ContextKind → String
 private def hypothesisCountLabel (count : Nat) (kind : String) : String :=
   s!"{count} {kind} " ++ if count == 1 then "hypothesis" else "hypotheses"
 
-private def resolvedTermDetail (info : ResolvedRef) : String :=
-  let typeText := if info.typeText.isEmpty then "expression" else info.typeText
-  if info.position.isEmpty then typeText else typeText ++ " · " ++ info.position
-
 structure InteractiveTermProps where
   term : RenderedTerm
+  domId : String
   ariaLabel : String
   target : Bool := false
 
-/-- A term-sized, keyboard-accessible entry point to VIR's expression-ref RPC. -/
-def InteractiveTerm : RuntimeM (Component InteractiveTermProps) :=
+/-- Contextual subexpression controls. Each selection owns a separate effect lease. -/
+def InteractiveTerm (context : Client.Context) : RuntimeM (Component InteractiveTermProps) :=
   Component.ofLean fun ctx => do
   let props := ctx.props
   let term := props.term
-  let initialExpanded ← JsValue.ofBool false
-  let expandedState ← Lean.Vir.React.StateTuple.toState
-    (← Lean.Vir.React.Hooks.useState initialExpanded)
-  let expanded ← JsValue.toBool expandedState.value
-  let initialDetail ← JsValue.ofString term.typeText
-  let detailState ← Lean.Vir.React.StateTuple.toState
-    (← Lean.Vir.React.Hooks.useState initialDetail)
-  let detail ← JsValue.toString detailState.value
-  let termId := "iris-term-" ++ safeId term.id
+  let inspection ← Client.useInspection context
+  let termId := props.domId
   let detailId := termId ++ "-detail"
-  let rpcTerm := ExprWithCtx.save term.id term.text term.typeText term.summary
-  let typeSuffix := if term.typeText.isEmpty then "" else " : " ++ term.typeText
-  let toggleDetails : DomM Unit := do
-    if expanded then
-      Lean.Vir.React.State.set expandedState (← JsValue.ofBool false)
-    else
-      Lean.Vir.React.State.set expandedState (← JsValue.ofBool true)
-      Lean.Vir.React.State.set detailState (← JsValue.ofString "resolving…")
-      let available ← Rpc.resolve rpcTerm fun info => do
-        Lean.Vir.React.State.set detailState (← JsValue.ofString (resolvedTermDetail info))
-      if !available then
-        let fallback := if term.typeText.isEmpty then "term details unavailable" else term.typeText
-        Lean.Vir.React.State.set detailState (← JsValue.ofString fallback)
-  let button : Html := Html.elementWithProps "button" #[
-    Lean.Vir.React.Props.id termId,
-    Lean.Vir.React.Props.type "button",
-    Lean.Vir.React.Props.title (term.summary ++ typeSuffix ++ " — click for details"),
-    Lean.Vir.React.Props.ariaLabel props.ariaLabel,
-    Lean.Vir.React.Props.ariaExpanded expanded,
-    Lean.Vir.React.Props.ariaControls detailId,
-    Lean.Vir.React.Props.data "term-ref" term.id,
-    Lean.Vir.React.Props.onClick toggleDetails,
-    Style.termButton props.target
-  ] #[Html.text term.text]
-  let details : Array Html := if expanded then #[
+  let parts : Array Html := (termParts term.code).mapIdx fun occurrence part =>
+    match if part.text.trimAscii.toString.isEmpty then none else part.reference with
+    | none => Html.text part.text
+    | some reference =>
+      let key := toString reference
+      Html.elementWithProps "button" #[
+        Lean.Vir.React.Props.id (termId ++ "-" ++ toString occurrence),
+        Lean.Vir.React.Props.type "button",
+        Lean.Vir.React.Props.title ("Inspect " ++ part.text),
+        Lean.Vir.React.Props.ariaLabel (props.ariaLabel ++ ": " ++ part.text),
+        Lean.Vir.React.Props.ariaExpanded (inspection.selected == some reference),
+        Lean.Vir.React.Props.ariaControls detailId,
+        Lean.Vir.React.Props.data "term-ref" key,
+        Lean.Vir.React.Props.onClick (inspection.select reference),
+        Style.termButton props.target
+      ] #[Html.text part.text]
+  let details : Array Html := if inspection.selected.isSome then #[
     Html.elementWithProps "span" #[
       Lean.Vir.React.Props.id detailId,
       Lean.Vir.React.Props.role "status",
       Style.termDetails
-    ] #[Html.text detail]
+    ] #[Html.text inspection.detail,
+      Html.elementWithProps "button" #[
+        Lean.Vir.React.Props.type "button",
+        Lean.Vir.React.Props.ariaLabel "Close term inspection",
+        Lean.Vir.React.Props.onClick inspection.close,
+        Style.collapseButton
+      ] #[Html.text "×"]]
   ] else #[]
-  Html.elementWithProps "span" #[Style.interactiveTerm] (#[button] ++ details)
+  Html.elementWithProps "span" #[Style.interactiveTerm]
+    (#[Html.elementWithProps "span" #[
+      Lean.Vir.React.Props.data "term-id" term.id,
+      Lean.Vir.React.Props.ariaLabel props.ariaLabel,
+      Style.termCode props.target
+    ] parts] ++ details)
 
-def HypothesisRow : RuntimeM (Component DisplayHypothesis) := do
-  let interactiveTerm ← InteractiveTerm
+structure HypothesisRowProps where
+  hypothesis : DisplayHypothesis
+  domId : String
+
+def HypothesisRow (context : Client.Context) : RuntimeM (Component HypothesisRowProps) := do
+  let interactiveTerm ← InteractiveTerm context
   Component.ofLean fun ctx =>
-  let hypothesis := ctx.props
+  let hypothesis := ctx.props.hypothesis
   let nameCell : Html := Html.elementWithProps "span" #[] #[
     Html.elementWithProps "span" #[
       Lean.Vir.React.Props.ariaHidden true,
@@ -114,9 +117,10 @@ def HypothesisRow : RuntimeM (Component DisplayHypothesis) := do
   ] #[
     nameCell,
     Html.keyedOfComponent
-      ("term-" ++ hypothesis.proposition.id ++ "-" ++ hypothesis.proposition.text)
+      ("term-" ++ hypothesis.proposition.id)
       interactiveTerm {
         term := hypothesis.proposition
+        domId := ctx.props.domId
         ariaLabel := "Inspect " ++ kindLabel hypothesis.kind ++ " hypothesis " ++ hypothesis.name
       }
   ]
@@ -126,16 +130,16 @@ structure ContextSectionProps where
   kind : ContextKind
   hypotheses : Array DisplayHypothesis
 
-def ContextSection : RuntimeM (Component ContextSectionProps) := do
-  let hypothesisRow ← HypothesisRow
+def ContextSection (context : Client.Context) : RuntimeM (Component ContextSectionProps) := do
+  let hypothesisRow ← HypothesisRow context
   Component.ofLean fun ctx =>
   let props := ctx.props
   let label := kindLabel props.kind
-  let rows : Array Html := props.hypotheses.map fun hypothesis =>
+  let rows : Array Html := props.hypotheses.mapIdx fun index hypothesis =>
     Html.keyedOfComponent
       (props.id ++ "-" ++ hypothesis.id)
       hypothesisRow
-      hypothesis
+      { hypothesis, domId := props.id ++ "-hyp-" ++ toString index }
   Html.elementWithProps "section" #[
     Lean.Vir.React.Props.id props.id,
     Lean.Vir.React.Props.ariaLabel label,
@@ -148,8 +152,12 @@ def ContextSection : RuntimeM (Component ContextSectionProps) := do
     ] rows
   ]
 
-def TargetSection : RuntimeM (Component RenderedTerm) := do
-  let interactiveTerm ← InteractiveTerm
+structure TargetSectionProps where
+  term : RenderedTerm
+  domId : String
+
+def TargetSection (context : Client.Context) : RuntimeM (Component TargetSectionProps) := do
+  let interactiveTerm ← InteractiveTerm context
   Component.ofLean fun ctx =>
   Html.elementWithProps "section" #[
     Lean.Vir.React.Props.ariaLabel "Target",
@@ -161,9 +169,10 @@ def TargetSection : RuntimeM (Component RenderedTerm) := do
         Style.glyph
       ] #[Html.text "⊢"],
       Html.keyedOfComponent
-        ("target-" ++ ctx.props.id ++ "-" ++ ctx.props.text)
+        ("target-" ++ ctx.props.term.id)
         interactiveTerm {
-          term := ctx.props
+          term := ctx.props.term
+          domId := ctx.props.domId
           ariaLabel := "Inspect target"
           target := true
         }
@@ -174,21 +183,17 @@ structure GoalCardProps where
   goal : DisplayGoal
   initiallyExpanded : Bool
 
-def GoalCard : RuntimeM (Component GoalCardProps) := do
-  let contextSection ← ContextSection
-  let targetSection ← TargetSection
+def GoalCard (context : Client.Context) : RuntimeM (Component GoalCardProps) := do
+  let contextSection ← ContextSection context
+  let targetSection ← TargetSection context
   Component.ofLean fun ctx => do
   let props := ctx.props
   let goal := props.goal
-  let initialExpanded ← JsValue.ofBool props.initiallyExpanded
-  let expandedState ← Lean.Vir.React.StateTuple.toState
-    (← Lean.Vir.React.Hooks.useState initialExpanded)
-  let expanded ← JsValue.toBool expandedState.value
+  let expandedState ← Client.useState props.initiallyExpanded
+  let expanded := expandedState.value
   let cardId := goalDomId goal
   let contentId := cardId ++ "-content"
-  let toggle : DomM Unit := do
-    let next ← JsValue.ofBool (!expanded)
-    Lean.Vir.React.State.set expandedState next
+  let toggle : DomM Unit := expandedState.set (!expanded)
   let summary :=
     s!"□ {goal.persistent.size} · ∗ {goal.spatial.size}"
   let heading : Html := Html.elementWithProps "h3" #[
@@ -237,7 +242,10 @@ def GoalCard : RuntimeM (Component GoalCardProps) := do
       Html.elementWithProps "div" #[
         Lean.Vir.React.Props.id contentId,
         Style.goalContent
-      ] (contexts ++ #[Html.ofComponent targetSection goal.target])
+      ] (contexts ++ #[Html.ofComponent targetSection {
+        term := goal.target
+        domId := cardId ++ "-target"
+      }])
     ] else #[]
   Html.elementWithProps "article" #[
     Lean.Vir.React.Props.id cardId,
@@ -246,8 +254,8 @@ def GoalCard : RuntimeM (Component GoalCardProps) := do
     Style.goalCard
   ] (#[header] ++ content)
 
-def ProofModeRegion : RuntimeM (Component (Array DisplayGoal)) := do
-  let goalCard ← GoalCard
+def ProofModeRegion (context : Client.Context) : RuntimeM (Component (Array DisplayGoal)) := do
+  let goalCard ← GoalCard context
   Component.ofLean fun ctx =>
   let goals := ctx.props
   let cards : Array Html := goals.zipIdx.map fun (goal, index) =>
@@ -263,19 +271,22 @@ def ProofModeRegion : RuntimeM (Component (Array DisplayGoal)) := do
   ] #[Html.elementWithProps "div" #[Style.goalList] cards]
 
 /-- The Lean-authored VIR component mounted by the Iris proof-mode widget. -/
-def App : RuntimeM (Js (Lean.Vir.React.Component WidgetState)) := do
-  let proofModeRegion ← ProofModeRegion
+def SnapshotView (context : Client.Context) : RuntimeM (Js (Lean.Vir.React.Component WidgetState)) := do
+  let proofModeRegion ← ProofModeRegion context
   Lean.Vir.React.Component.ofLean fun state =>
   if state.goals.isEmpty then
     Lean.Vir.React.Node.fragment #[]
   else
     Lean.Vir.React.Node.component proofModeRegion (componentProps state.goals)
 
+def App : RuntimeM (Js (Lean.Vir.React.Component Lean.Vir.Infoview.Surface)) :=
+  Client.application SnapshotView
+
 /-- Workspace-relative location of the VIR runtime built for Iris's Lean toolchain. -/
 def runtimeWasmPath : String :=
   ".lake/packages/lean_vir/web/public/vir-upstream.wasm"
 
-def widgetSpec : Lean.Vir.Infoview.ReactRpcWidget WidgetState where
+def widgetSpec : Lean.Vir.Infoview.ReactWidget where
   component := App
   componentName := "Iris.ProofMode.Widget.createComponent"
   mountName := "Iris.ProofMode.Widget.mount"
@@ -285,21 +296,20 @@ def widgetSpec : Lean.Vir.Infoview.ReactRpcWidget WidgetState where
 
 @[vir_export]
 def createComponent : RuntimeM
-    (Js (Lean.Vir.React.Component Lean.Vir.Infoview.RpcJson)) :=
-  Lean.Vir.Infoview.ReactRpcWidget.createComponent widgetSpec
+    (Js (Lean.Vir.React.Component Lean.Vir.Infoview.Surface)) :=
+  widgetSpec.component
 
 @[vir_export]
 def mount :
     Js Lean.Vir.React.Root →
-    Js (Lean.Vir.React.Component Lean.Vir.Infoview.RpcJson) →
-    Lean.Vir.Infoview.RpcJson → DomM Unit :=
-  Lean.Vir.Infoview.ReactRpcWidget.mount
+    Js (Lean.Vir.React.Component Lean.Vir.Infoview.Surface) →
+    Lean.Vir.Infoview.Surface → DomM Unit :=
+  Lean.Vir.React.Root.renderComponent
 
 def irPackage : Lean.Vir.Infoview.IRPackage :=
-  Lean.Vir.Infoview.ReactRpcWidget.irPackage widgetSpec
+  Lean.Vir.Infoview.ReactWidget.irPackage widgetSpec
 
 def widgetProps : Lean.Vir.Infoview.WidgetProps :=
-  Lean.Vir.Infoview.ReactRpcWidget.rpcProps widgetSpec
-    "Iris.ProofMode.Widget.state"
+  Lean.Vir.Infoview.ReactWidget.props widgetSpec
 
 end Iris.ProofMode.Widget

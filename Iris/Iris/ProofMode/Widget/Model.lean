@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Lean.Data.Json.FromToJson
+public import Lean.Widget.TaggedText
 
 namespace Iris.ProofMode.Widget
 
@@ -15,17 +16,29 @@ public inductive ContextKind where
   deriving Repr, BEq, DecidableEq, Lean.ToJson, Lean.FromJson
 
 /--
-A proposition rendered by Lean on the server. The wrapper leaves room for
-transporting tagged spans without changing the goal model or its React
-components. The reference metadata lets VIR resolve a selected term at the
-current editor position.
+A proposition rendered by Lean on the server. Indices in `code` address saved
+contextual expressions in the owning snapshot, never global handles or display IDs.
 -/
 public structure RenderedTerm where
   id : String
   text : String
   typeText : String
   summary : String
+  code : Lean.Widget.TaggedText Nat := .text text
   deriving Repr, BEq, Lean.ToJson, Lean.FromJson
+
+/-- Renderable leaves inherit their innermost semantic tag; buttons never nest. -/
+public structure TermPart where
+  text : String
+  reference : Option Nat
+  deriving Repr, BEq
+
+public partial def termParts (code : Lean.Widget.TaggedText Nat)
+    (reference : Option Nat := none) : Array TermPart :=
+  match code with
+  | .text text => if text.isEmpty then #[] else #[{ text, reference }]
+  | .append children => children.flatMap (termParts · reference)
+  | .tag index body => termParts body (some index)
 
 /-- A single Iris hypothesis extracted from the typed proof-mode state. -/
 public structure DisplayHypothesis where
@@ -51,7 +64,7 @@ public structure DisplayGoal where
 
 /-- Versioned payload transported from the Lean server to the VIR component. -/
 public structure WidgetState where
-  version : Nat := 2
+  version : Nat := 3
   goals : Array DisplayGoal
   deriving Repr, BEq, Lean.ToJson, Lean.FromJson
 

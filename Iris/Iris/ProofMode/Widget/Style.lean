@@ -169,6 +169,16 @@ public def termDetails : Props.Entry := style #[
   ("overflowWrap", "anywhere")
 ]
 
+public def termCode (target : Bool) : Props.Entry := style #[
+  ("minWidth", "0"),
+  ("fontFamily", editorFont),
+  ("fontSize", if target then "0.76rem" else "0.75rem"),
+  ("lineHeight", "1.3"),
+  ("whiteSpace", "pre-wrap"),
+  ("overflowWrap", "anywhere"),
+  ("color", if target then targetAccent else foreground)
+]
+
 public def targetSection : Props.Entry := style #[
   ("display", "grid"),
   ("minWidth", "0"),
