@@ -72,8 +72,9 @@ Three kinds of identity deliberately differ:
 
 - Model IDs identify displayed goals/hypotheses and provide React keys within
   a snapshot. The same persistent hypothesis can occur in several goals.
-- DOM IDs identify *rendered occurrences*. They are scoped by goal index,
-  context kind and row index, so shared hypotheses have separate controls.
+- DOM IDs identify *rendered occurrences*. React's `useId` supplies each
+  component occurrence with an opaque native ID; related controls reuse that
+  exact value without constructing a Lean string.
 - Tag indices address saved expressions in one native server snapshot. They
   are neither DOM IDs nor names. Keep the exact native snapshot reference.
 
@@ -82,14 +83,19 @@ the expression, local context and elaboration context; only tag indices and
 canonical text cross the display JSON boundary. Inspection uses the saved
 context, including variables bound inside a proposition.
 
+Keep native identity native. `PanelWidgetProps`, RPC sessions, retained snapshot
+references, React IDs, and inspection reply text are `Js` values in the client
+adapter; do not decode them into Lean merely to build another JavaScript object
+or render a text node. The display JSON is the deliberate exception: it becomes
+the typed `WidgetState` domain that the Iris view traverses.
+
 New snapshots currently reset selection and collapse state. Effect cleanup
 suppresses late success and failure; it does not cancel the transport or dispose
 the VIR runtime. Do not infer correspondence across snapshots from spelling.
 
-The current DOM namespace assumes one Iris widget instance in a document.
-Multiple simultaneous instances need a per-instance namespace; exposing React's
-`useId` in VIR would provide the appropriate primitive. Goal-local scoping fixes
-the reproduced split-goal collision, not that broader untested case.
+React's native `useId` supplies a per-instance DOM namespace. Each rendered
+goal, context and inspection control receives its own native IDs, preventing
+collisions both across split goals and across concurrent Iris widget instances.
 
 ## Review and testing
 

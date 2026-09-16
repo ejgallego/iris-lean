@@ -161,7 +161,7 @@ async function run() {
     await release(afterUnmount); check(container.textContent === "", "late reply resurrected unmounted widget");
     await mount(config.ordinary);
     await waitFor("empty outside Iris", () => container.querySelector('[data-vir-infoview-state="ready"]') &&
-      !container.textContent.includes("Loading") && !container.querySelector("#iris-proof-mode-widget"));
+      !container.textContent.includes("Loading") && !container.querySelector("[data-iris-proof-mode-widget]"));
     // A genuine package RPC failure must keep its message through the shell UI.
     await mount(config.contexts, [prefix + "noSuchWidgetExport"]);
     await until("readable package failure", async () => {
