@@ -75,13 +75,13 @@ async function run() {
     });
     const sessionAt = position => sessions.connect({ textDocument: { uri: config.uri }, position }, config.capabilities);
     root = createRoot(container, { onUncaughtError: error => errors.push(String(error.stack ?? error)) });
-    const mount = async (position, roots = [prefix + "createComponent", prefix + "mount"]) => {
+    const mount = async (position, roots = [prefix + "createComponent"]) => {
       globalThis.irisSession = sessionAt(position);
       await React.act(async () => root.render(React.createElement(React.StrictMode, null,
         React.createElement(VirInfoviewWidget, {
           wasmPath: ".lake/packages/lean_vir/web/public/vir-upstream.wasm",
           irPackage: { roots },
-          componentEntry: prefix + "createComponent", entry: prefix + "mount",
+          componentEntry: prefix + "createComponent",
           pos: { uri: config.uri, ...position }, autoReloadMs: config.autoReloadMs,
         }))));
     };

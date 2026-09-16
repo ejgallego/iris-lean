@@ -39,7 +39,7 @@ const bundle = await build({
   }}, { name: "official-session-context", setup(builder) {
     builder.onResolve({ filter: /^@leanprover\/infoview$/ }, () => ({ path: "context", namespace: "iris-test" }));
     builder.onLoad({ filter: /.*/, namespace: "iris-test" }, () => ({
-      contents: "import * as React from 'react'; export const EditorContext = React.createContext(null); export function useRpcSession() { return globalThis.irisSession; }",
+      contents: "import * as React from 'react'; export const EditorContext = React.createContext(null); export const DocumentPosition = { toTdpp: position => position }; export const TaggedText_stripTags = value => value; export function useClientNotificationEffect() {} export function useRpcSession() { return globalThis.irisSession; }",
       resolveDir: fileURLToPath(vir), loader: "js",
     }));
   }}],

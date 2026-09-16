@@ -8,10 +8,16 @@ public import Vir.React
 
 namespace Iris.ProofMode.Widget.Style
 
+open Lean.Vir
 open Lean.Vir.React
 
-private def style (entries : Array (String × String)) : Props.Entry :=
-  Props.stylePairs entries
+public abbrev Entry := RuntimeM Js.Object
+
+private def style (entries : Array (String × String)) : Entry := do
+  let object ← Js.Object.empty
+  for (name, value) in entries do
+    Js.Construction.field object (← JsValue.ofString name) (← JsValue.ofString value)
+  pure object
 
 private def vscodeColor (name fallback : String) : String :=
   "var(--vscode-" ++ name ++ ", " ++ fallback ++ ")"
@@ -30,7 +36,7 @@ private def targetAccent : String := vscodeColor "symbolIcon-keywordForeground" 
 private def editorFont : String :=
   "var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace)"
 
-public def region : Props.Entry := style #[
+public def region : Entry := style #[
   ("display", "grid"),
   ("gap", "4px"),
   ("minWidth", "0"),
@@ -41,12 +47,12 @@ public def region : Props.Entry := style #[
   ("fontFamily", "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif")
 ]
 
-public def goalList : Props.Entry := style #[
+public def goalList : Entry := style #[
   ("display", "grid"),
   ("gap", "4px")
 ]
 
-public def goalCard : Props.Entry := style #[
+public def goalCard : Entry := style #[
   ("display", "grid"),
   ("gap", "0"),
   ("minWidth", "0"),
@@ -56,7 +62,7 @@ public def goalCard : Props.Entry := style #[
   ("background", background)
 ]
 
-public def goalHeader : Props.Entry := style #[
+public def goalHeader : Entry := style #[
   ("display", "flex"),
   ("alignItems", "center"),
   ("justifyContent", "space-between"),
@@ -66,7 +72,7 @@ public def goalHeader : Props.Entry := style #[
   ("flexWrap", "wrap")
 ]
 
-public def goalHeading : Props.Entry := style #[
+public def goalHeading : Entry := style #[
   ("minWidth", "0"),
   ("margin", "0"),
   ("fontSize", "0.76rem"),
@@ -74,7 +80,7 @@ public def goalHeading : Props.Entry := style #[
   ("overflowWrap", "anywhere")
 ]
 
-public def goalSummary : Props.Entry := style #[
+public def goalSummary : Entry := style #[
   ("margin", "0"),
   ("color", muted),
   ("fontSize", "0.68rem"),
@@ -82,7 +88,7 @@ public def goalSummary : Props.Entry := style #[
   ("overflowWrap", "anywhere")
 ]
 
-public def collapseButton : Props.Entry := style #[
+public def collapseButton : Entry := style #[
   ("minWidth", "20px"),
   ("minHeight", "20px"),
   ("padding", "0 3px"),
@@ -96,14 +102,14 @@ public def collapseButton : Props.Entry := style #[
   ("cursor", "pointer")
 ]
 
-public def goalContent : Props.Entry := style #[
+public def goalContent : Entry := style #[
   ("display", "grid"),
   ("gap", "2px"),
   ("minWidth", "0"),
   ("padding", "1px 5px 4px")
 ]
 
-public def contextSection (persistent : Bool) : Props.Entry := style #[
+public def contextSection (persistent : Bool) : Entry := style #[
   ("display", "grid"),
   ("gap", "0"),
   ("minWidth", "0"),
@@ -111,7 +117,7 @@ public def contextSection (persistent : Bool) : Props.Entry := style #[
   ("borderLeft", "2px solid " ++ if persistent then persistentAccent else spatialAccent)
 ]
 
-public def hypothesisList : Props.Entry := style #[
+public def hypothesisList : Entry := style #[
   ("display", "grid"),
   ("gap", "1px"),
   ("margin", "0"),
@@ -119,7 +125,7 @@ public def hypothesisList : Props.Entry := style #[
   ("listStyle", "none")
 ]
 
-public def hypothesis : Props.Entry := style #[
+public def hypothesis : Entry := style #[
   ("display", "grid"),
   ("gridTemplateColumns", "minmax(min-content, auto) minmax(0, 1fr)"),
   ("alignItems", "baseline"),
@@ -128,7 +134,7 @@ public def hypothesis : Props.Entry := style #[
   ("padding", "0 2px")
 ]
 
-public def hypothesisName : Props.Entry := style #[
+public def hypothesisName : Entry := style #[
   ("minWidth", "0"),
   ("fontFamily", editorFont),
   ("fontSize", "0.74rem"),
@@ -136,13 +142,13 @@ public def hypothesisName : Props.Entry := style #[
   ("overflowWrap", "anywhere")
 ]
 
-public def interactiveTerm : Props.Entry := style #[
+public def interactiveTerm : Entry := style #[
   ("display", "grid"),
   ("gap", "1px"),
   ("minWidth", "0")
 ]
 
-public def termButton (target : Bool) : Props.Entry := style #[
+public def termButton (target : Bool) : Entry := style #[
   ("minWidth", "0"),
   ("padding", "0"),
   ("border", "0"),
@@ -159,7 +165,7 @@ public def termButton (target : Bool) : Props.Entry := style #[
   ("cursor", "pointer")
 ]
 
-public def termDetails : Props.Entry := style #[
+public def termDetails : Entry := style #[
   ("minWidth", "0"),
   ("color", muted),
   ("fontFamily", editorFont),
@@ -169,7 +175,7 @@ public def termDetails : Props.Entry := style #[
   ("overflowWrap", "anywhere")
 ]
 
-public def termCode (target : Bool) : Props.Entry := style #[
+public def termCode (target : Bool) : Entry := style #[
   ("minWidth", "0"),
   ("fontFamily", editorFont),
   ("fontSize", if target then "0.76rem" else "0.75rem"),
@@ -179,7 +185,7 @@ public def termCode (target : Bool) : Props.Entry := style #[
   ("color", if target then targetAccent else foreground)
 ]
 
-public def targetSection : Props.Entry := style #[
+public def targetSection : Entry := style #[
   ("display", "grid"),
   ("minWidth", "0"),
   ("marginTop", "1px"),
@@ -187,7 +193,7 @@ public def targetSection : Props.Entry := style #[
   ("borderTop", "1px solid " ++ targetAccent)
 ]
 
-public def target : Props.Entry := style #[
+public def target : Entry := style #[
   ("display", "grid"),
   ("gridTemplateColumns", "min-content minmax(0, 1fr)"),
   ("alignItems", "baseline"),
@@ -199,7 +205,7 @@ public def target : Props.Entry := style #[
   ("overflowWrap", "anywhere")
 ]
 
-public def glyph : Props.Entry := style #[
+public def glyph : Entry := style #[
   ("display", "inline-block"),
   ("minWidth", "1em"),
   ("fontFamily", editorFont),

@@ -5,18 +5,17 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Iris.ProofMode.Widget.Model
-public import Vir.Infoview.Surface
+public import Vir.Infoview.Panel
+public import Vir.Infoview.Client
 public import Vir.React
 
 /-!
 # Browser adapter
 
-Keep JavaScript values, native RPC calls and effect lifetimes here. The renderer
-uses `useState` and `useInspection` with ordinary Lean values; server-side Iris
-recognition belongs in `Rpc.lean`, not in this module.
-
-The helpers below compose VIR's native React bindings. They do not introduce a
-second state store, reference registry, or Promise implementation.
+Keep JavaScript values, native RPC calls and effect lifetimes here. The panel
+component receives upstream `PanelWidgetProps` unchanged, obtains the current
+position-specific RPC session through VIR's native hook, and keeps Iris display
+state in explicit Lean-backed React props.
 -/
 
 public section
@@ -24,15 +23,73 @@ public section
 namespace Iris.ProofMode.Widget.Client
 
 open Lean.Vir
+open Lean.Vir.Infoview
+open Lean.Vir.React
 
 /-- A native response object, including a reference registered by the infoview client. -/
 opaque Reply : Type
 
 /-- Exact session and snapshot identity; the flag retires all snapshot interactions. -/
 structure Context where
-  session : Js Infoview.RpcSession
+  session : Js RpcSession
   snapshot : Js.Any
   active : RuntimeRef Bool
+
+/-- React state containing a Lean value and the exact native dependency object. -/
+structure State (α : Type) where
+  value : α
+  set : α → RuntimeM Unit
+  dependency : JSL α
+
+/-- Call unconditionally inside a component render, just like React's `useState`. -/
+def useState (initial : α) : ReactM (State α) := do
+  let state ← Hooks.useState (← LeanRef.toJSL initial)
+  let value ← LeanRef.fromJSL (← Js.Tuple2.first state)
+  let set ← Js.Tuple2.second state
+  return {
+    value
+    set := fun next => do
+      let value ← LeanRef.toJSL next
+      Js.Function.callVoid set (React.SetStateAction.ofValue value)
+    dependency := ← Js.Tuple2.first state
+  }
+
+private def dependencyListCast (values : Js.Array α) : Js React.DependencyList := by
+  unfold Lean.Vir.Js.Array at values
+  unfold Lean.Vir.React.DependencyList
+  unfold Lean.Vir.Js at *
+  exact values
+
+private def dependencyList (deps : Array (Js α)) : RuntimeM (Js React.DependencyList) := do
+  let values ← Js.Array.ofArray deps
+  pure (dependencyListCast values)
+
+/-- Build a React effect from Lean setup and cleanup actions without revoking the runtime. -/
+def useLeanEffectWithArrayDeps
+    (setup : RuntimeM (JSL α))
+    (cleanup : JSL α → RuntimeM Unit)
+    (deps : Array (Js β)) : ReactM Unit := do
+  let effect ← Js.Function.ofLean0 do
+    let lease ← setup
+    let release ← Js.Function.ofLean0Void (cleanup lease)
+    pure (Js.UndefinedOr.ofJs release)
+  Hooks.useEffect effect (Js.UndefinedOr.ofJs (← dependencyList deps))
+
+/-- A Lean-valued component uses VIR's explicit native `data` props wrapper. -/
+abbrev Component (α : Type) : Type :=
+  FunctionComponent (Props.WithData α)
+
+namespace Component
+
+def ofLean (render : α → ReactM (Js Node)) : RuntimeM (Component α) :=
+  FunctionComponent.ofLean fun props => do
+    render (← LeanRef.fromJSL (← Props.WithData.data props))
+
+def render (component : Component α) (props : α) : ReactM (Js Node) := do
+  let nativeProps ← Props.WithData.make (← LeanRef.toJSL props)
+  Node.functionComponent component nativeProps (← Js.Array.empty)
+
+end Component
 
 /-- Observe a native Promise, including exceptions in its fulfillment callback.
     Cleanup suppresses both late success and late failure without disposing the runtime. -/
@@ -47,35 +104,15 @@ def observe (active : RuntimeRef Bool) (pending : Js.Promise α)
   let _ ← Js.Promise.thenVoidWithRejection settled ignored onFailure
   pure ()
 
-def retire (lease : JSL (RuntimeRef Bool)) : Browser.DomM Unit := do
+def retire (lease : JSL (RuntimeRef Bool)) : RuntimeM Unit := do
   (← LeanRef.fromJSL lease).set false
-
-/-- React state containing a Lean value. `dependency` is the exact retained JSL
-    object, not a fresh wrapper manufactured on every render. -/
-structure State (α : Type) where
-  value : α
-  set : α → RuntimeM Unit
-  dependency : JSL α
-
-/-- Call unconditionally inside a component render, just like React's `useState`.
-    Lean values are wrapped explicitly; native RPC references must not use this
-    as a wire encoder. -/
-def useState (initial : α) : React.ReactM (State α) := do
-  let state ← React.StateTuple.toState (← React.Hooks.useState (← LeanRef.toJSL initial))
-  return {
-    value := ← LeanRef.fromJSL state.value
-    set := fun value => do React.State.set state (← LeanRef.toJSL value)
-    dependency := state.value
-  }
 
 /-- Send a snapshot-relative index with the exact native reference, never its JSON copy. -/
 def inspect (context : Context) (reference : Nat) : RuntimeM (Js.Promise String) := do
   let params ← Js.Object.empty
   Js.Object.set params (← JsValue.ofString "snapshot") context.snapshot
-  -- At this VIR pin, `ofNat` produces bigint (not JSON-serializable).
-  -- Array indices and LSP positions below use actual JavaScript numbers.
   Js.Object.set params (← JsValue.ofString "reference") (← JsValue.ofFloat reference.toFloat)
-  Infoview.RpcSession.call context.session (← JsValue.ofString "Iris.ProofMode.Widget.inspect") params
+  RpcSession.call context.session (← JsValue.ofString "Iris.ProofMode.Widget.inspect") params
 
 /-- Renderer-facing inspection state. Semantic indices never pass through strings. -/
 structure Inspection where
@@ -86,10 +123,10 @@ structure Inspection where
 
 /-- One effect per selection, retired on reselection or unmount. The enclosing
     snapshot has its own lifetime, checked before applying either RPC outcome. -/
-def useInspection (context : Context) : React.ReactM Inspection := do
+def useInspection (context : Context) : ReactM Inspection := do
   let selected ← useState (none : Option Nat)
   let detail ← useState ""
-  React.Hooks.useLeanEffectWithArrayDeps
+  useLeanEffectWithArrayDeps
     (do
       let active ← RuntimeRef.new true
       if let some reference := selected.value then
@@ -98,9 +135,8 @@ def useInspection (context : Context) : React.ReactM Inspection := do
           let pending ← inspect context reference
           observe active pending (fun value => do
             if ← context.active.get then detail.set (← JsValue.toString value))
-            (do
-              if ← context.active.get then
-                detail.set "Inspection unavailable (expired snapshot or RPC error).")
+            (do if ← context.active.get then
+              detail.set "Inspection unavailable (expired snapshot or RPC error).")
       else
         detail.set ""
       LeanRef.toJSL active)
@@ -113,33 +149,38 @@ def useInspection (context : Context) : React.ReactM Inspection := do
     close := selected.set none
   }
 
-private def request (surface : Infoview.Surface) : RuntimeM (Js.Promise Reply) := do
-  let pos ← Js.Object.empty
-  Js.Object.set pos (← JsValue.ofString "line") (← JsValue.ofFloat surface.cursor.line.toFloat)
-  Js.Object.set pos (← JsValue.ofString "character") (← JsValue.ofFloat surface.cursor.character.toFloat)
+private def request (session : Js RpcSession) (position : Js PanelPosition) :
+    RuntimeM (Js.Promise Reply) := do
   let params ← Js.Object.empty
-  Js.Object.set params (← JsValue.ofString "pos") pos
-  Infoview.RpcSession.call surface.rpcSession (← JsValue.ofString "Iris.ProofMode.Widget.state") params
+  Js.Object.set params (← JsValue.ofString "pos") position
+  RpcSession.call session (← JsValue.ofString "Iris.ProofMode.Widget.state") params
 
 structure Loaded where
   state : WidgetState
-  view : Js (React.Component WidgetState)
+  view : Component WidgetState
 
 abbrev LoadState := Except String (Option Loaded)
 
-/-- One effect per actual Surface prop object. Each successful snapshot constructs
+private def errorNode (message : String) : ReactM (Js Node) := do
+  let props ← Js.Object.empty
+  Js.Object.set props (← JsValue.ofString "role") (← JsValue.ofString "alert")
+  let children ← Js.Array.ofArray #[← Node.text (← JsValue.ofString message)]
+  Node.createElement (← ElementType.tag (← JsValue.ofString "pre")) props children
+
+/-- One effect per actual upstream panel prop object. Each successful snapshot constructs
     its view once, so a new snapshot resets selection rather than matching names. -/
-def application (makeView : Context → RuntimeM (Js (React.Component WidgetState))) :
-    RuntimeM (Js (React.Component Infoview.Surface)) :=
-  React.Component.ofLeanJs fun input => do
-    let surface ← LeanRef.fromJSL input
+def application (makeView : Context → RuntimeM (Component WidgetState)) :
+    RuntimeM (FunctionComponent PanelWidgetProps) :=
+  FunctionComponent.ofLean fun input => do
+    let session ← useRpcSession
+    let position ← PanelWidgetProps.pos input
     let loading : LoadState := .ok none
     let state ← useState loading
-    React.Hooks.useLeanEffectWithArrayDeps
+    useLeanEffectWithArrayDeps
       (do
         let active ← RuntimeRef.new true
         state.set loading
-        let pending ← request surface
+        let pending ← request session position
         observe active pending (fun reply => do
           let display ← JsValue.toString (← Js.String.fromAny
             (← Js.Object.get reply (← JsValue.ofString "display")))
@@ -151,16 +192,15 @@ def application (makeView : Context → RuntimeM (Js (React.Component WidgetStat
                 pure (.error "Unsupported Iris widget snapshot version" : LoadState)
               else do
                 let snapshot ← Js.Object.get reply (← JsValue.ofString "snapshot")
-                let view ← makeView { session := surface.rpcSession, snapshot, active }
+                let view ← makeView { session, snapshot, active }
                 pure (.ok (some { state := payload, view }) : LoadState)
           state.set result)
           (state.set (.error "Iris snapshot unavailable; check the Lean server and refresh."))
         LeanRef.toJSL active)
       retire #[input]
     match state.value with
-    | .ok none => React.Node.spanText "Loading Iris goals…"
-    | .ok (some loaded) => React.Node.component loaded.view loaded.state
-    | .error error => do
-      React.Node.elementWith "pre" #[React.Props.role "alert"] #[← React.Node.text error]
+    | .ok none => Node.text (← JsValue.ofString "Loading Iris goals…")
+    | .ok (some loaded) => Component.render loaded.view loaded.state
+    | .error error => errorNode error
 
 end Iris.ProofMode.Widget.Client

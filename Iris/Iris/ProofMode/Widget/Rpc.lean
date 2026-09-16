@@ -24,12 +24,13 @@ public meta section
 namespace Iris.ProofMode.Widget
 
 open Lean Lean.Meta Lean.Server Qq
+open Lean.Widget (CodeWithInfos InteractiveGoal TaggedText ppExprTagged)
 open Iris.BI
 
 /-- Cursor position supplied by VIR when refreshing the widget. -/
 structure StateRequest where
   pos : Lsp.Position
-  deriving Server.RpcEncodable
+  deriving RpcEncodable
 
 /-- Only this adapter consumes delaborator info nodes; the wire never exposes them. -/
 structure SavedTerm where
@@ -50,8 +51,8 @@ structure SnapshotReply where
 
 abbrev ProjectionM := StateT (Array SavedTerm) MetaM
 
-private partial def retainCode (code : Lean.Widget.CodeWithInfos) :
-    ProjectionM (Lean.Widget.TaggedText Nat) := do
+private partial def retainCode (code : CodeWithInfos) :
+    ProjectionM (TaggedText Nat) := do
   match code with
   | .text text => return .text text
   | .append children => return .append (← children.mapM retainCode)
@@ -69,7 +70,7 @@ private partial def retainCode (code : Lean.Widget.CodeWithInfos) :
     | none => retainCode body
 
 private def renderedIProp (id summary : String) (expr : Expr) : ProjectionM RenderedTerm := do
-  let code ← Lean.Widget.ppExprTagged expr Iris.ProofMode.delabIProp
+  let code ← ppExprTagged expr delabIProp
   let type ← instantiateMVars (← inferType expr)
   let typeText ← ppExpr type
   return {
@@ -82,7 +83,7 @@ private def renderedIProp (id summary : String) (expr : Expr) : ProjectionM Rend
 
 private partial def displayHypotheses
     {u : Level} {prop : Q(Type u)} {bi : Q(BI $prop)} {e : Q($prop)}
-    (hyps : Iris.ProofMode.Hyps bi e)
+    (hyps : Hyps bi e)
     (names : NameMap Nat := {})
     (acc : Array DisplayHypothesis := #[]) :
     ProjectionM (NameMap Nat × Array DisplayHypothesis) := do
@@ -97,7 +98,7 @@ private partial def displayHypotheses
             (index + 1, name.appendAfter <|
               if index == 0 then "✝" else "✝" ++ index.toSuperscriptString)
         | none => (0, name)
-      let kind := if Iris.ProofMode.isTrue persistent then .persistent else .spatial
+      let kind := if isTrue persistent then .persistent else .spatial
       let kindDescription := if kind == .persistent then "persistent" else "spatial"
       let hypothesis : DisplayHypothesis := {
         id := toString ivar.name
@@ -115,7 +116,7 @@ Project the typed result of `Iris.ProofMode.parseIrisGoal?` into the stable
 widget domain.
 -/
 def toDisplayGoal
-    (irisGoal : Iris.ProofMode.IrisGoal)
+    (irisGoal : IrisGoal)
     (mvarId : MVarId)
     (index : Nat)
     (userName? : Option String) : ProjectionM DisplayGoal := do
@@ -144,12 +145,12 @@ provenance explicit: every `DisplayGoal` accepted by the widget originates in
 `Iris.ProofMode.parseIrisGoal?`, never in delaborated infoview text.
 -/
 private def displayIrisGoalAt?
-    (goal : Lean.Widget.InteractiveGoal) (index : Nat) (refs : Array SavedTerm) :
+    (goal : InteractiveGoal) (index : Nat) (refs : Array SavedTerm) :
     IO (Option DisplayGoal × Array SavedTerm) :=
   goal.ctx.val.runMetaM {} do
     goal.mvarId.withContext do
       let target ← instantiateMVars (← goal.mvarId.getType)
-      let some irisGoal := Iris.ProofMode.parseIrisGoal? target
+      let some irisGoal := parseIrisGoal? target
         | return (none, refs)
       let (display, refs) ← (toDisplayGoal irisGoal goal.mvarId index goal.userName?).run refs
       return (some display, refs)
@@ -176,7 +177,7 @@ def inspect (params : InspectRequest) : RequestM (RequestTask String) :=
 /-- Return typed Iris proof-mode state for the goals at the requested cursor. -/
 @[server_rpc_method]
 def state (params : StateRequest) : RequestM (RequestTask SnapshotReply) := do
-  let goalsTask ← Server.FileWorker.getInteractiveGoals {
+  let goalsTask ← FileWorker.getInteractiveGoals {
     textDocument := { uri := (← RequestM.readDoc).meta.uri }
     position := params.pos
   }

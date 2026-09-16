@@ -18,8 +18,8 @@ server after changing dependencies or rebuilding the widget package.
 
 Click a tagged span, or focus it and press Enter. Use × to close inspection.
 The [runbook](vir-demo-runbook.md) contains the cache-enabled build command.
-The exact VIR pin is published on
-[`fix/iris-widget-errors`](https://github.com/ejgallego/lean-vir/tree/fix/iris-widget-errors).
+This worktree is pinned to the Lean 4.32 refresh at
+[`e60433a9`](https://github.com/ejgallego/lean-vir/commit/e60433a958643eb4e63650a317e38265e6a896c2).
 A fresh clone can fetch the sources, but still needs the matching Lean 4.32.2
 Wasm runtime built separately; dependency fetching alone is not installation.
 
@@ -29,7 +29,8 @@ Wasm runtime built separately; dependency fetching alone is not installation.
 | --- | --- | --- |
 | Display data | [`Model.lean`](../Iris/Iris/ProofMode/Widget/Model.lean) | Plain Lean structures, tagged text, JSON version |
 | Iris meaning | [`Rpc.lean`](../Iris/Iris/ProofMode/Widget/Rpc.lean) | Typed goal projection and saved-context inspection |
-| Layout and controls | [`Widget.lean`](../Iris/Iris/ProofMode/Widget.lean) | Goal cards, context rows, target, activation |
+| Panel entrypoint | [`Widget.lean`](../Iris/Iris/ProofMode/Widget.lean) | VIR package root and native panel configuration |
+| Layout and controls | [`View.lean`](../Iris/Iris/ProofMode/Widget/View.lean) | Goal cards, context rows, target, activation |
 | Density and theme | [`Style.lean`](../Iris/Iris/ProofMode/Widget/Style.lean) | CSS using VS Code theme tokens |
 | Browser integration | [`Client.lean`](../Iris/Iris/ProofMode/Widget/Client.lean) | Native JS/RPC values, React state, effect lifetimes |
 | Semantic regressions | [`Widget.lean` tests](../Iris/IrisTest/ProofMode/Widget.lean) | Actual elaborated Iris goals, binder contexts and occurrence identity |
@@ -45,6 +46,14 @@ These are normal React hooks: call them unconditionally in component render
 functions. Their state belongs to React, not to a parallel Iris state store.
 `Vir.ProofWidgets.Html` is a client-side React construction action, **not** the
 serialized server-side `ProofWidgets.Html` type.
+
+Use selective namespace openings for common types and prop builders (`Props`,
+`PanelWidgetProps`, `TaggedText`). In the view, `Component` is the
+ProofWidgets-style facade; retain `React.FunctionComponent` for the native
+panel boundary. Likewise keep `React.Hooks.useState` distinct from the
+Lean-valued `Client.useState` helper.
+Declaration names, RPC method strings and provenance documentation remain fully
+qualified where they identify an external interface.
 
 ## Boundaries to preserve
 
