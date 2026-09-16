@@ -41,6 +41,12 @@ structure State (α : Type) where
   set : α → RuntimeM Unit
   dependency : JSL α
 
+/- Native React state for a value that must remain on the JavaScript side. -/
+private structure JsState (α : Type) where
+  value : Js α
+  set : Js α → RuntimeM Unit
+  dependency : Js α
+
 /-- Call unconditionally inside a component render, just like React's `useState`. -/
 def useState (initial : α) : ReactM (State α) := do
   let state ← Hooks.useState (← LeanRef.toJSL initial)
@@ -54,18 +60,29 @@ def useState (initial : α) : ReactM (State α) := do
     dependency := ← Js.Tuple2.first state
   }
 
-private def dependencyListCast (values : Js.Array α) : Js React.DependencyList := by
+/-- Keep JavaScript-owned values native across React state updates. -/
+private def useJsState (initial : Js α) : ReactM (JsState α) := do
+  let state ← Hooks.useState initial
+  let value ← Js.Tuple2.first state
+  let set ← Js.Tuple2.second state
+  return {
+    value
+    set := fun next => Js.Function.callVoid set (React.SetStateAction.ofValue next)
+    dependency := value
+  }
+
+private def asDependencyList (values : Js.Array α) : Js React.DependencyList := by
   unfold Lean.Vir.Js.Array at values
   unfold Lean.Vir.React.DependencyList
   unfold Lean.Vir.Js at *
   exact values
 
-private def dependencyList (deps : Array (Js α)) : RuntimeM (Js React.DependencyList) := do
+private def mkDependencyList (deps : Array (Js α)) : RuntimeM (Js React.DependencyList) := do
   let values ← Js.Array.ofArray deps
-  pure (dependencyListCast values)
+  pure (asDependencyList values)
 
 /-- Build a React effect from Lean setup and cleanup actions without revoking the runtime. -/
-def useLeanEffectWithArrayDeps
+private def useEffect
     (setup : RuntimeM (JSL α))
     (cleanup : JSL α → RuntimeM Unit)
     (deps : Array (Js β)) : ReactM Unit := do
@@ -73,7 +90,7 @@ def useLeanEffectWithArrayDeps
     let lease ← setup
     let release ← Js.Function.ofLean0Void (cleanup lease)
     pure (Js.UndefinedOr.ofJs release)
-  Hooks.useEffect effect (Js.UndefinedOr.ofJs (← dependencyList deps))
+  Hooks.useEffect effect (Js.UndefinedOr.ofJs (← mkDependencyList deps))
 
 /-- A Lean-valued component uses VIR's explicit native `data` props wrapper. -/
 abbrev Component (α : Type) : Type :=
@@ -104,7 +121,7 @@ def observe (active : RuntimeRef Bool) (pending : Js.Promise α)
   let _ ← Js.Promise.thenVoidWithRejection settled ignored onFailure
   pure ()
 
-def retire (lease : JSL (RuntimeRef Bool)) : RuntimeM Unit := do
+private def deactivate (lease : JSL (RuntimeRef Bool)) : RuntimeM Unit := do
   (← LeanRef.fromJSL lease).set false
 
 /-- Send a snapshot-relative index with the exact native reference, never its JSON copy. -/
@@ -117,7 +134,7 @@ def inspect (context : Context) (reference : Nat) : RuntimeM (Js.Promise String)
 /-- Renderer-facing inspection state. Semantic indices never pass through strings. -/
 structure Inspection where
   selected : Option Nat
-  detail : String
+  detail : Js String
   select : Nat → RuntimeM Unit
   close : RuntimeM Unit
 
@@ -125,22 +142,21 @@ structure Inspection where
     snapshot has its own lifetime, checked before applying either RPC outcome. -/
 def useInspection (context : Context) : ReactM Inspection := do
   let selected ← useState (none : Option Nat)
-  let detail ← useState ""
-  useLeanEffectWithArrayDeps
+  let detail ← useJsState (← JsValue.ofString "")
+  useEffect
     (do
       let active ← RuntimeRef.new true
       if let some reference := selected.value then
-        detail.set "Inspecting…"
+        detail.set (← JsValue.ofString "Inspecting…")
         if ← context.active.get then
           let pending ← inspect context reference
-          observe active pending (fun value => do
-            if ← context.active.get then detail.set (← JsValue.toString value))
+          observe active pending (fun value => do if ← context.active.get then detail.set value)
             (do if ← context.active.get then
-              detail.set "Inspection unavailable (expired snapshot or RPC error).")
+              detail.set (← JsValue.ofString "Inspection unavailable (expired snapshot or RPC error)."))
       else
-        detail.set ""
+        detail.set (← JsValue.ofString "")
       LeanRef.toJSL active)
-    retire #[selected.dependency]
+    deactivate #[selected.dependency]
   return {
     selected := selected.value
     detail := detail.value
@@ -176,7 +192,7 @@ def application (makeView : Context → RuntimeM (Component WidgetState)) :
     let position ← PanelWidgetProps.pos input
     let loading : LoadState := .ok none
     let state ← useState loading
-    useLeanEffectWithArrayDeps
+    useEffect
       (do
         let active ← RuntimeRef.new true
         state.set loading
@@ -197,7 +213,7 @@ def application (makeView : Context → RuntimeM (Component WidgetState)) :
           state.set result)
           (state.set (.error "Iris snapshot unavailable; check the Lean server and refresh."))
         LeanRef.toJSL active)
-      retire #[input]
+      deactivate #[input]
     match state.value with
     | .ok none => Node.text (← JsValue.ofString "Loading Iris goals…")
     | .ok (some loaded) => Component.render loaded.view loaded.state

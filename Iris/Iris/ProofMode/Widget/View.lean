@@ -25,9 +25,6 @@ open Lean.Vir.ProofWidgets
 open scoped Lean.Vir.Js
 open scoped Lean.Vir.ProofWidgets.Jsx
 
-private def goalDomId (goal : DisplayGoal) : String :=
-  "iris-proof-mode-goal-" ++ toString goal.index
-
 private def kindLabel : ContextKind → String
   | .persistent => "Persistent"
   | .spatial => "Spatial"
@@ -41,29 +38,28 @@ private def countLabel (count : Nat) (kind : String) : String :=
 
 structure InteractiveTermProps where
   term : RenderedTerm
-  domId : String
   ariaLabel : String
   target : Bool := false
 
 def interactiveTerm (context : Client.Context) : RuntimeM (Client.Component InteractiveTermProps) :=
   Client.Component.ofLean (fun props => do
     let inspection ← Client.useInspection context
-    let detailId := props.domId ++ "-detail"
-    let nodes ← (termParts props.term.code).mapIdxM fun index part =>
+    let detailId ← Hooks.useId
+    let nodes ← (termParts props.term.code).mapM fun part =>
       match if part.text.trimAscii.toString.isEmpty then none else part.reference with
       | none => Html.text part.text
       | some reference => do
         let select ← Js.Function.ofLeanVoid fun (_ : Js Browser.Event) => inspection.select reference
-        return ← <button id={(← JsValue.ofString (props.domId ++ "-" ++ toString index))}
-            type="button" title={(← JsValue.ofString ("Inspect " ++ part.text))}
+        return ← <button type="button" title={(← JsValue.ofString ("Inspect " ++ part.text))}
             aria-label={(← JsValue.ofString (props.ariaLabel ++ ": " ++ part.text))}
             aria-expanded={(← JsValue.ofBool (inspection.selected == some reference))}
-            aria-controls={(← JsValue.ofString detailId)} data-term-ref={(← JsValue.ofString (toString reference))}
+            aria-controls={detailId} data-term-ref={(← JsValue.ofString (toString reference))}
             onClick={select} style={(← Style.termButton props.target)}>{Html.text part.text}</button>
     let nodes : Js.Array Node ← Js.Array.ofArray nodes
     let details : Js.Array Node ← if inspection.selected.isSome then
-      Js.Array.ofArray #[← <span id={(← JsValue.ofString detailId)} role="status" style={(← Style.termDetails)}>
-        {Html.text inspection.detail}<button type="button" aria-label="Close term inspection"
+      let detail ← Node.text inspection.detail
+      Js.Array.ofArray #[← <span id={detailId} role="status" style={(← Style.termDetails)}>
+        {detail}<button type="button" aria-label="Close term inspection"
         onClick={← Js.Function.ofLeanVoid fun (_ : Js Browser.Event) => inspection.close}
         style={(← Style.collapseButton)}>×</button></span>]
     else Js.Array.empty
@@ -72,7 +68,6 @@ def interactiveTerm (context : Client.Context) : RuntimeM (Client.Component Inte
 
 structure HypothesisProps where
   hypothesis : DisplayHypothesis
-  domId : String
 
 def hypothesisRow (context : Client.Context) : RuntimeM (Client.Component HypothesisProps) := do
   let term ← interactiveTerm context
@@ -83,13 +78,12 @@ def hypothesisRow (context : Client.Context) : RuntimeM (Client.Component Hypoth
       {Html.text hypothesis.name}</strong></span>
     let value ← Client.Component.render term {
       term := hypothesis.proposition
-      domId := props.domId
       ariaLabel := "Inspect " ++ kindLabel hypothesis.kind ++ " hypothesis " ++ hypothesis.name
     }
     return ← <li role="listitem" style={(← Style.hypothesis)}>{name}{value}</li>)
 
 structure ContextProps where
-  id : String
+  id : Js String
   kind : ContextKind
   hypotheses : Array DisplayHypothesis
 
@@ -97,22 +91,21 @@ def contextSection (context : Client.Context) : RuntimeM (Client.Component Conte
   let row ← hypothesisRow context
   Client.Component.ofLean (fun props => do
     let label := kindLabel props.kind
-    let values ← props.hypotheses.mapIdxM fun index hypothesis =>
-      Client.Component.render row { hypothesis, domId := props.id ++ "-hyp-" ++ toString index }
+    let values ← props.hypotheses.mapM fun hypothesis =>
+      Client.Component.render row { hypothesis }
     let values : Js.Array Node ← Js.Array.ofArray values
-    return ← <section id={(← JsValue.ofString props.id)} aria-label={(← JsValue.ofString label)}
+    return ← <section id={props.id} aria-label={(← JsValue.ofString label)}
       style={(← Style.contextSection (props.kind == .persistent))}><ul role="list"
       aria-label={(← JsValue.ofString (label ++ " hypotheses"))} style={(← Style.hypothesisList)}>{values}</ul></section>)
 
 structure TargetProps where
   term : RenderedTerm
-  domId : String
 
 def targetSection (context : Client.Context) : RuntimeM (Client.Component TargetProps) := do
   let term ← interactiveTerm context
   Client.Component.ofLean (fun props => do
     let value ← Client.Component.render term {
-      term := props.term, domId := props.domId, ariaLabel := "Inspect target", target := true
+      term := props.term, ariaLabel := "Inspect target", target := true
     }
     return ← <section aria-label="Target" style={(← Style.targetSection)}><div style={(← Style.target)}>
       <span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>⊢</span>{value}</div></section>)
@@ -128,42 +121,49 @@ def goalCard (context : Client.Context) : RuntimeM (Client.Component GoalProps) 
     let goal := props.goal
     let expandedState ← Client.useState props.initiallyExpanded
     let expanded := expandedState.value
-    let cardId := goalDomId goal
-    let contentId := cardId ++ "-content"
+    let cardId ← Hooks.useId
+    let headingId ← Hooks.useId
+    let contentId ← Hooks.useId
+    let toggleId ← Hooks.useId
+    let persistentId ← Hooks.useId
+    let spatialId ← Hooks.useId
     let toggle ← Js.Function.ofLeanVoid fun (_ : Js Browser.Event) => expandedState.set (!expanded)
     let summary := s!"□ {goal.persistent.size} · ∗ {goal.spatial.size}"
     let summaryLabel := countLabel goal.persistent.size "persistent" ++ ", " ++ countLabel goal.spatial.size "spatial"
-    let header ← <header style={(← Style.goalHeader)}><h3 id={(← JsValue.ofString (cardId ++ "-heading"))}
+    let header ← <header style={(← Style.goalHeader)}><h3 id={headingId}
       style={(← Style.goalHeading)}>{Html.text goal.title}</h3><p aria-label={(← JsValue.ofString summaryLabel)}
-      style={(← Style.goalSummary)}>{Html.text summary}</p><button id={(← JsValue.ofString (cardId ++ "-toggle"))}
+      style={(← Style.goalSummary)}>{Html.text summary}</p><button id={toggleId}
       type="button" title={(← JsValue.ofString (if expanded then "Collapse goal" else "Expand goal"))}
       aria-label={(← JsValue.ofString (if expanded then "Collapse " ++ goal.title else "Expand " ++ goal.title))}
-      aria-expanded={(← JsValue.ofBool expanded)} aria-controls={(← JsValue.ofString contentId)} onClick={toggle}
+      aria-expanded={(← JsValue.ofBool expanded)} aria-controls={contentId} onClick={toggle}
       style={(← Style.collapseButton)}>{Html.text (if expanded then "−" else "+")}</button></header>
     let mut children : Array (Js Node) := #[]
     if !goal.persistent.isEmpty then
       children := children.push (← Client.Component.render contextView {
-        id := cardId ++ "-persistent", kind := .persistent, hypotheses := goal.persistent
+        id := persistentId, kind := .persistent, hypotheses := goal.persistent
       })
     if !goal.spatial.isEmpty then
       children := children.push (← Client.Component.render contextView {
-        id := cardId ++ "-spatial", kind := .spatial, hypotheses := goal.spatial
+        id := spatialId, kind := .spatial, hypotheses := goal.spatial
       })
-    children := children.push (← Client.Component.render targetView { term := goal.target, domId := cardId ++ "-target" })
+    children := children.push (← Client.Component.render targetView { term := goal.target })
     let contents : Js.Array Node ← if expanded then
       let nativeChildren : Js.Array Node ← Js.Array.ofArray children
-      Js.Array.ofArray #[← <div id={(← JsValue.ofString contentId)} style={(← Style.goalContent)}>{nativeChildren}</div>]
+      Js.Array.ofArray #[← <div id={contentId} style={(← Style.goalContent)}>{nativeChildren}</div>]
     else Js.Array.empty
-    return ← <article id={(← JsValue.ofString cardId)} aria-labelledby={(← JsValue.ofString (cardId ++ "-heading"))}
+    return ← <article id={cardId} aria-labelledby={headingId}
       data-goal-id={(← JsValue.ofString goal.id)} style={(← Style.goalCard)}>{header}{contents}</article>)
 
 def region (context : Client.Context) : RuntimeM (Client.Component (Array DisplayGoal)) := do
   let card ← goalCard context
   Client.Component.ofLean (fun goals => do
+    let regionId ← Hooks.useId
     let cards ← goals.zipIdx.mapM fun (goal, index) =>
       Client.Component.render card { goal, initiallyExpanded := index == 0 }
     let cards : Js.Array Node ← Js.Array.ofArray cards
-    return ← <section id="iris-proof-mode-widget" role="region" aria-label="Iris proof mode" style={(← Style.region)}>
+    return ← <section id={regionId}
+      data-iris-proof-mode-widget={(← JsValue.ofString "true")} role="region" aria-label="Iris proof mode"
+      style={(← Style.region)}>
       <div style={(← Style.goalList)}>{cards}</div></section>)
 
 def snapshotView (context : Client.Context) : RuntimeM (Client.Component WidgetState) := do
