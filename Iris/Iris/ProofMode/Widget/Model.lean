@@ -9,11 +9,14 @@ public import Lean.Widget.TaggedText
 
 namespace Iris.ProofMode.Widget
 
+open Lean (FromJson ToJson)
+open Lean.Widget (TaggedText)
+
 /-- The two Iris proof-mode contexts shown by the widget. -/
 public inductive ContextKind where
   | persistent
   | spatial
-  deriving Repr, BEq, DecidableEq, Lean.ToJson, Lean.FromJson
+  deriving Repr, BEq, DecidableEq, ToJson, FromJson
 
 /--
 A proposition rendered by Lean on the server. Indices in `code` address saved
@@ -24,8 +27,8 @@ public structure RenderedTerm where
   text : String
   typeText : String
   summary : String
-  code : Lean.Widget.TaggedText Nat := .text text
-  deriving Repr, BEq, Lean.ToJson, Lean.FromJson
+  code : TaggedText Nat := .text text
+  deriving Repr, BEq, ToJson, FromJson
 
 /-- Renderable leaves inherit their innermost semantic tag; buttons never nest. -/
 public structure TermPart where
@@ -33,7 +36,7 @@ public structure TermPart where
   reference : Option Nat
   deriving Repr, BEq
 
-public partial def termParts (code : Lean.Widget.TaggedText Nat)
+public partial def termParts (code : TaggedText Nat)
     (reference : Option Nat := none) : Array TermPart :=
   match code with
   | .text text => if text.isEmpty then #[] else #[{ text, reference }]
@@ -46,7 +49,7 @@ public structure DisplayHypothesis where
   kind : ContextKind
   name : String
   proposition : RenderedTerm
-  deriving Repr, BEq, Lean.ToJson, Lean.FromJson
+  deriving Repr, BEq, ToJson, FromJson
 
 /--
 The serializable projection of one typed `Iris.ProofMode.IrisGoal` recognized
@@ -60,12 +63,12 @@ public structure DisplayGoal where
   persistent : Array DisplayHypothesis
   spatial : Array DisplayHypothesis
   target : RenderedTerm
-  deriving Repr, BEq, Lean.ToJson, Lean.FromJson
+  deriving Repr, BEq, ToJson, FromJson
 
 /-- Versioned payload transported from the Lean server to the VIR component. -/
 public structure WidgetState where
   version : Nat := 3
   goals : Array DisplayGoal
-  deriving Repr, BEq, Lean.ToJson, Lean.FromJson
+  deriving Repr, BEq, ToJson, FromJson
 
 end Iris.ProofMode.Widget

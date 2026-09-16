@@ -54,7 +54,7 @@ private def sampleState : WidgetState := {
   | .ok state => state == sampleState
   | .error _ => false
 #guard widgetProps.componentEntry == "Iris.ProofMode.Widget.createComponent"
-#guard widgetProps.rpcMethod == ""
+#guard widgetProps.autoReloadMs == 1000
 #guard sampleState.version == 3
 #guard termParts (.tag 0 (.append #[.text "(", .tag 1 (.text "P"), .text ")"])) ==
   #[{ text := "(", reference := some 0 }, { text := "P", reference := some 1 },
