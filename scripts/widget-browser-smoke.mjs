@@ -12,12 +12,14 @@ const iris = new URL("../Iris/", import.meta.url);
 const vir = new URL(".lake/packages/lean_vir/", iris);
 const require = createRequire(new URL("package.json", vir));
 const { build } = require("esbuild");
-const { createMessageConnection, StreamMessageReader, StreamMessageWriter } = require("vscode-jsonrpc/node.js");
+const { createMessageConnection, StreamMessageReader, StreamMessageWriter, CancellationTokenSource } = require("vscode-jsonrpc/node.js");
 const { launchChromium, openChromiumPage, navigate, evaluate } = await import(new URL("tests/browser/harness.mjs", vir));
 const { finishLeanProcess } = await import(new URL("tests/infoview/rpc-process-test-support.mjs", vir));
 const { withCleanup } = await import(new URL("tests/infoview/rpc-test-support.js", vir));
 const sourcePath = new URL("IrisTest/ProofMode/WidgetDemo.lean", iris);
-const source = await readFile(sourcePath, "utf8");
+// Only this in-memory document sees the server cancellation probe.
+const source = (await readFile(sourcePath, "utf8")).replace("import Iris.ProofMode.Widget\n",
+  "import Iris.ProofMode.Widget\npublic meta import IrisTest.ProofMode.WidgetRpc\n");
 const position = marker => {
   const lines = source.split("\n");
   const matches = lines.flatMap((line, index) => line.includes(marker) ? [index] : []);
@@ -60,6 +62,7 @@ const bundle = await build({
 
 let child, connection, server, chrome, cdp, deadline;
 const keepalives = new Map(), diagnostics = [];
+const pending = new Map(), cancelled = new Set(), completed = new Set();
 let stderr = "";
 await withCleanup(async () => {
   const timedOut = new Promise((_, reject) => {
@@ -87,15 +90,29 @@ await withCleanup(async () => {
   const config = {
     uri: sourcePath.href, capabilities: initialized.capabilities,
     packageDelayMs: Number(process.env.IRIS_WIDGET_PACKAGE_DELAY_MS ?? 0),
+    width: Number(process.env.IRIS_WIDGET_WIDTH ?? 360),
+    fontSize: Number(process.env.IRIS_WIDGET_FONT_SIZE ?? 14),
+    theme: process.env.IRIS_WIDGET_THEME ?? "light",
     contexts: position("widget-position-contexts"), split: position("widget-position-split"),
     binders: position("widget-position-binders"),
     ordinary: position("widget-position-ordinary"),
   };
+  assert.ok(Number.isFinite(config.width) && config.width >= 200);
+  assert.ok(Number.isFinite(config.fontSize) && config.fontSize >= 10);
+  const themes = {
+    light: "--vscode-editor-background:#fff;--vscode-editor-foreground:#24292f",
+    dark: "--vscode-editor-background:#1f1f1f;--vscode-editor-foreground:#ccc;--vscode-descriptionForeground:#aaa;--vscode-panel-border:#555;--vscode-textCodeBlock-background:#292929;--vscode-textLink-foreground:#4daafc;--vscode-editorWarning-foreground:#d7ba7d;--vscode-symbolIcon-keywordForeground:#c586c0",
+    contrast: "--vscode-editor-background:#000;--vscode-editor-foreground:#fff;--vscode-descriptionForeground:#fff;--vscode-panel-border:#fff;--vscode-textCodeBlock-background:#000;--vscode-textLink-foreground:#6fc3df;--vscode-editorWarning-foreground:#ffff00;--vscode-symbolIcon-keywordForeground:#fff",
+  };
+  assert.ok(Object.hasOwn(themes, config.theme), "unknown test theme");
   server = createServer(async (req, res) => {
     try {
       if (req.method === "GET") {
         const assets = {
-          "/": ["text/html", '<!doctype html><meta charset="utf-8"><div id="app"></div><script src="/test.js"></script>'],
+          "/": ["text/html", `<!doctype html><meta charset="utf-8"><style>
+            :root { ${themes[config.theme]}; --vscode-editor-font-size:${config.fontSize}px; }
+            body { background:var(--vscode-editor-background); color:var(--vscode-editor-foreground); }
+            </style><div id="app"></div><script src="/test.js"></script>`],
           "/test.js": ["text/javascript", bundle.outputFiles[0].contents],
           "/config": ["application/json", JSON.stringify(config)],
         };
@@ -120,7 +137,19 @@ await withCleanup(async () => {
         await connection.sendNotification("textDocument/didChange", result);
         await connection.sendRequest("textDocument/waitForDiagnostics", { uri: sourcePath.href, version: 2 });
       } else if (req.url === "/call") {
-        result = await connection.sendRequest("$/lean/rpc/call", body);
+        const token = new CancellationTokenSource();
+        pending.set(body.id, token);
+        if (cancelled.delete(body.id)) token.cancel();
+        try {
+          result = await connection.sendRequest("$/lean/rpc/call", body.params, token.token);
+        } finally {
+          pending.delete(body.id); cancelled.delete(body.id); completed.add(body.id); token.dispose();
+        }
+      } else if (req.url === "/cancel") {
+        if (!completed.has(body.id)) {
+          cancelled.add(body.id);
+          pending.get(body.id)?.cancel();
+        }
       } else if (req.url === "/release") {
         await connection.sendNotification("$/lean/rpc/release", body);
       } else if (req.url === "/close") {
@@ -134,7 +163,7 @@ await withCleanup(async () => {
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   chrome = await launchChromium(); cdp = await openChromiumPage(chrome);
-  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 360, height: 900, deviceScaleFactor: 1, mobile: false });
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: config.width, height: 900, deviceScaleFactor: 1, mobile: false });
   await bounded(navigate(cdp, `http://127.0.0.1:${server.address().port}/`));
   // Drive actual browser keyboard activation, not a synthetic click claiming to test Enter.
   for (;;) {

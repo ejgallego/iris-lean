@@ -23,12 +23,17 @@ lake update
 cd ..
 node scripts/widget-setup-runtime.mjs
 cd Iris
-lake build IrisTest.ProofMode.Widget IrisTest.ProofMode.WidgetDemo +Iris.ProofMode.Widget:vir
+lake build IrisTest.ProofMode.Widget IrisTest.ProofMode.WidgetDemo IrisTest.ProofMode.WidgetRpc +Iris.ProofMode.Widget:vir
 lake test
 cd ..
 node scripts/widget-runtime-smoke.mjs
 node scripts/widget-browser-smoke.mjs
 ```
+
+The browser harness also accepts `IRIS_WIDGET_WIDTH`, `IRIS_WIDGET_FONT_SIZE`,
+`IRIS_WIDGET_THEME` (`light`, `dark`, `contrast`), `IRIS_WIDGET_PACKAGE_DELAY_MS`,
+and an optional `IRIS_WIDGET_SCREENSHOT` PNG path. These are test settings;
+the production widget follows the editor's theme and font-size variables.
 
 Lake's artifact cache stays enabled. `LAKE_RESTORE_ARTIFACTS=true` materializes
 cached module files for VIR's standalone package generator, which currently

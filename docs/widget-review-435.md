@@ -47,7 +47,11 @@ rendered syntax. This remains the appropriate existing Iris interface for
 recognizing goals. Contextual inspection retains elaborator-owned expressions
 and binder contexts in a server snapshot.
 
-## Remaining review findings
+## Findings at the migration checkpoint
+
+All three findings below are addressed by the follow-up described in
+[the UI development plan](widget-ui-development.md). This section retains the
+review rationale from `8c1db345`.
 
 1. **RPC failures lose useful diagnostics** (`Client.observe`, `useInspection`,
    `application`). The rejection handler discards the native error and substitutes
@@ -90,7 +94,7 @@ exercises imported `readAsset` and `buildIRPackage`, followed by Iris `state`
 and `inspect`. This result does not diagnose or retroactively validate the old
 4.32 registration regression.
 
-## Validation
+## Migration validation (`8c1db345`)
 
 Commands were run with `LAKE_ARTIFACT_CACHE=true`,
 `LAKE_CACHE_DIR=/home/egallego/.cache/mathlib`, and

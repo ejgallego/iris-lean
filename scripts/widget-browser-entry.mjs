@@ -11,13 +11,19 @@ const post = async (path, body) => {
 };
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.irisAcceptance = run().then(value => ({ ok: true, value }), error => {
-  globalThis.irisFailure = String(error.stack ?? error);
+  globalThis.irisFailure = String(error?.stack ?? JSON.stringify(error) ?? error);
   return { ok: false, error: globalThis.irisFailure };
 });
 
 async function run() {
   const config = await (await fetch("/config")).json();
   const container = document.getElementById("app"), errors = [], notifications = new Set(), gates = [];
+  const keyWarnings = [], originalConsoleError = console.error;
+  console.error = (...args) => {
+    const message = args.map(String).join(" ");
+    if (/unique.*key|same key/i.test(message)) keyWarnings.push(message);
+    originalConsoleError(...args);
+  };
   const recordError = event => errors.push(String(event.error ?? event.reason ?? event.message));
   addEventListener("error", recordError); addEventListener("unhandledrejection", recordError);
   const notify = (path, body) => {
@@ -25,7 +31,8 @@ async function run() {
     notifications.add(task); void task.then(() => notifications.delete(task));
   };
   const calls = [];
-  let nextGate, rejectNext = false, sessions, root;
+  let nextGate, rejectNext = false, sessions, root, nextId = 0, waitNext = false,
+    failState = false, malformedState = false, injectedError;
   const arm = method => {
     const gate = { method, ...Promise.withResolvers(), received: false, finished: false };
     gates.push(gate); nextGate = gate; return gate;
@@ -52,24 +59,45 @@ async function run() {
       async createRpcSession() { return (await post("/connect", {})).sessionId; },
       closeRpcSession(sessionId) { notify("/close", { sessionId }); },
       release(params) { notify("/release", params); },
-      async call(params) {
+      async call(params, options) {
+        const id = ++nextId;
+        const record = { ...params, id, hasSignal: Boolean(options?.abortSignal), cancelled: false };
+        const cancel = () => { record.cancelled = true; notify("/cancel", { id }); };
+        options?.abortSignal?.addEventListener("abort", cancel, { once: true });
+        if (options?.abortSignal?.aborted) cancel();
         const gate = nextGate?.method === params.method ? nextGate : null;
         if (gate) nextGate = null;
         // Deliberate server-side failure injection, not a fabricated Promise rejection.
         if (rejectNext && params.method === prefix + "inspect") {
           rejectNext = false; params = { ...params, params: { ...params.params, reference: 999999 } };
         }
-        calls.push(params);
+        if (waitNext && params.method === prefix + "inspect") {
+          waitNext = false; params = { ...params, method: "IrisTest.ProofMode.WidgetRpc.waitForCancellation" };
+          record.probe = true;
+        }
+        if (failState && params.method === prefix + "state") {
+          failState = false; params = { ...params, method: prefix + "missingStateForTest" };
+        }
+        calls.push(record);
         try {
-          const result = await post("/call", params);
+          // Transport/decoding failures are deliberately injected at the native client boundary.
+          if (injectedError && params.method === prefix + "inspect") {
+            const error = injectedError.value; injectedError = undefined; throw error;
+          }
+          let result = await post("/call", { id, params });
+          if (malformedState && params.method === prefix + "state") {
+            malformedState = false; result = { ...result, display: null };
+          }
           if (params.method === "Lean.Vir.Infoview.buildIRPackage" && config.packageDelayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, config.packageDelayMs));
           }
           return result;
         }
-        catch (error) { params.testError = error; throw error; }
+        catch (error) { record.testError = error; throw error; }
         finally {
           if (gate) { gate.received = true; await gate.promise; gate.finished = true; }
+          record.settled = true;
+          options?.abortSignal?.removeEventListener("abort", cancel);
         }
       },
     });
@@ -98,25 +126,86 @@ async function run() {
     check(target().querySelector("[data-term-id]").textContent === payload.goals[0].target.text,
       "tag rendering preserves canonical Lean text");
     check(!container.querySelector("button button"), "semantic buttons must not nest");
-    check(document.documentElement.scrollWidth <= innerWidth, "360px layout overflow");
+    check(document.documentElement.scrollWidth <= innerWidth, "narrow layout overflow");
+    check(parseFloat(getComputedStyle(button("P")).fontSize) === config.fontSize,
+      "proof terms must respect the editor font-size setting");
     button("P").focus(); globalThis.irisPhase = "keyboard";
     await waitFor("native Enter activation inspects P", () => detail().includes("P : PROP"));
 
     const oldSelection = arm(prefix + "inspect");
     await click(button("R")); await waitFor("actual R reply held", () => oldSelection.received);
     await click(button("S")); await waitFor("new S inspection", () => detail().includes("S : PROP"));
+    check(calls.some(call => call.method === prefix + "inspect" && call.cancelled && !call.settled),
+      "reselection must abort the old inspection even when its response has already arrived");
     await release(oldSelection); check(detail().includes("S : PROP"), "late R replaced selected S");
 
     rejectNext = true;
     await click(button("P")); await waitFor("visible server rejection", () => detail().includes("Inspection unavailable"));
+    check(detail().includes("No such expression in this Iris snapshot") && detail().includes("-32602"),
+      `lost server RPC diagnostics: ${detail()}`);
     const oldFailure = arm(prefix + "inspect"); rejectNext = true;
     await click(button("R")); await waitFor("actual failure held", () => oldFailure.received);
     await click(button("S")); await waitFor("S after failure", () => detail().includes("S : PROP"));
     await release(oldFailure); check(detail().includes("S : PROP"), "late failure replaced selected S");
 
+    for (const [reference, error, expected] of [
+      ["P", Object.assign(new Error("Transport offline in test"), { code: "OFFLINE" }), "Transport offline in test (OFFLINE)"],
+      ["R", "Disconnected transport", "Disconnected transport"],
+      ["S", null, "Unknown RPC error"],
+      ["P", undefined, "Unknown RPC error"],
+      ["R", {}, "Unknown RPC error"],
+    ]) {
+      injectedError = { value: error };
+      await click(button(reference));
+      await waitFor("readable native rejection", () => detail().includes(expected));
+      check(!detail().includes("[object Object]"), "object rejection leaked into the UI");
+    }
+
+    // A test-only server method remains active until Lean observes $/cancelRequest.
+    const counts = async () => {
+      try { return await sessionAt(config.contexts).call("IrisTest.ProofMode.WidgetRpc.counts", {}); }
+      catch (error) { throw new Error(`cancellation probe counts: ${JSON.stringify(error)}`); }
+    };
+    const beforeCancellation = await counts();
+    waitNext = true;
+    await click(button("P"));
+    await waitFor("server cancellation probe started", async () => (await counts())[0] > beforeCancellation[0]);
+    const cancelledRequest = calls.findLast(call => call.probe);
+    check(cancelledRequest.hasSignal, "inspection must pass a native AbortSignal");
+    await click(button("S"));
+    await waitFor("replacement after cancellation", () => detail().includes("S : PROP"));
+    await waitFor("Lean observed cancellation", async () => (await counts())[1] > beforeCancellation[1]);
+    await waitFor("cancelled request settled", () => cancelledRequest.settled);
+    check(cancelledRequest.cancelled && cancelledRequest.testError?.code === -32800,
+      `server cancellation did not settle as RequestCancelled: ${JSON.stringify(cancelledRequest)}`);
+
+    const beforeClose = await counts();
+    waitNext = true;
+    await click(button("R"));
+    await waitFor("close probe started", async () => (await counts())[0] > beforeClose[0]);
+    await click(target().querySelector('button[aria-label="Close term inspection"]'));
+    await waitFor("closing cancels in Lean", async () => (await counts())[1] > beforeClose[1]);
+    check(!target().querySelector('[role="status"]'), "closing must hide the pending inspector");
+
+    failState = true;
+    await mount(config.binders);
+    await until("readable snapshot failure", async () => {
+      await tick(); return container.querySelector('[role="alert"]')?.textContent.includes("-32601");
+    });
+    check(container.textContent.includes("missingStateForTest"), "snapshot failure lost method diagnostics");
+    malformedState = true;
+    await mount(config.contexts);
+    await until("fulfillment handler error is visible", async () => {
+      await tick(); return container.querySelector('[role="alert"]')?.textContent.includes("Iris snapshot unavailable");
+    });
+    check(!container.textContent.includes("Unknown RPC error") && !container.textContent.includes("[object Object]"),
+      "decoding exception must retain its native message");
+
     const oldSnapshot = arm(prefix + "state");
     await mount(config.binders); await waitFor("old snapshot reply held", () => oldSnapshot.received);
     await mount(config.split); await waitFor("split goals", () => container.querySelectorAll("article").length === 2);
+    check(calls.some(call => call.method === prefix + "state" && call.cancelled && !call.settled),
+      "navigation must abort the obsolete snapshot request");
     await release(oldSnapshot); check(container.querySelectorAll("article").length === 2, "late snapshot replaced split goals");
     check(!container.querySelector('[role="status"]'), "split retained old term selection");
     const second = container.querySelectorAll("article")[1];
@@ -168,6 +257,8 @@ async function run() {
     const afterUnmount = arm(prefix + "inspect"); rejectNext = true;
     await click(button("R")); await waitFor("unmount failure held", () => afterUnmount.received);
     await React.act(async () => root.render(null));
+    check(calls.some(call => call.method === prefix + "inspect" && call.cancelled && !call.settled),
+      "unmount must abort the outstanding inspection");
     await release(afterUnmount); check(container.textContent === "", "late reply resurrected unmounted widget");
     await mount(config.ordinary);
     await waitFor("empty outside Iris", () => container.querySelector('[data-vir-infoview-state="ready"]') &&
@@ -181,16 +272,20 @@ async function run() {
     check(container.textContent.includes("fingerprint is unavailable") && container.textContent.includes("-32602") &&
       !container.textContent.includes("[object Object]"), `lost native package error: ${container.textContent}`);
     check(errors.length === 0, `uncaught browser failures: ${errors.join("\n")}`);
-    return { requests: calls.length, width: innerWidth, cases: ["native keyboard", "canonical text", "contextual subterms",
+    check(keyWarnings.length === 0, `React key warnings: ${keyWarnings.join("\n")}`);
+    return { requests: calls.length, width: innerWidth, fontSize: config.fontSize, theme: config.theme,
+      cases: ["editor font size", "native keyboard", "canonical text", "contextual subterms",
       "nested binders", "repeated occurrences", "server rejection", "stale selection success/failure", "stale snapshot",
       "goal split", "unique DOM IDs", "shared hypothesis ARIA/close isolation", "late unmount failure",
       "same-position proof edit", "package reuse", "empty outside Iris", "readable package RPC error", "React Strict Mode",
+      "native RPC diagnostics", "snapshot/decoding errors", "server-observed cancellation", "no React key warnings",
       ...(config.packageDelayMs > 0 ? ["slow package startup"] : [])] };
   }, [
     ["gates", () => { for (const gate of gates) gate.resolve(); }],
     ["root", () => root && React.act(async () => root.unmount())],
     ["sessions", () => sessions?.dispose()],
     ["notifications", () => Promise.all(notifications)],
+    ["console", () => { console.error = originalConsoleError; }],
     ["errors", () => { removeEventListener("error", recordError); removeEventListener("unhandledrejection", recordError);
       check(errors.length === 0, `browser or cleanup failure: ${errors.join("\n")}`); }],
   ]);

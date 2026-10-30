@@ -170,9 +170,12 @@ structure InspectRequest where
 @[server_rpc_method]
 def inspect (params : InspectRequest) : RequestM (RequestTask String) :=
   RequestM.asTask do
+    RequestM.checkCancelled
     let some term := params.snapshot.val.references[params.reference]?
       | throw (RequestError.invalidParams "No such expression in this Iris snapshot")
-    inspectSavedTerm term
+    let result ← inspectSavedTerm term
+    RequestM.checkCancelled
+    return result
 
 /-- Return typed Iris proof-mode state for the goals at the requested cursor. -/
 @[server_rpc_method]
@@ -182,14 +185,18 @@ def state (params : StateRequest) : RequestM (RequestTask SnapshotReply) := do
     position := params.pos
   }
   RequestM.mapRequestTaskCostly goalsTask fun goals? => do
+    RequestM.checkCancelled
     let mut displayGoals := #[]
     let mut references := #[]
     if let some goals := goals? then
       for (goal, index) in goals.goals.zipIdx do
+        -- Cancellation is cooperative: do not start another goal after retirement.
+        RequestM.checkCancelled
         let (displayGoal?, refs) ← displayIrisGoalAt? goal index references
         references := refs
         if let some displayGoal := displayGoal? then
           displayGoals := displayGoals.push displayGoal
+    RequestM.checkCancelled
     return {
       display := (toJson ({ goals := displayGoals } : WidgetState)).compress
       snapshot := ← WithRpcRef.mk { references }

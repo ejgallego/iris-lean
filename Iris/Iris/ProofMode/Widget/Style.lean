@@ -36,6 +36,8 @@ def targetAccent : String := vscodeColor "symbolIcon-keywordForeground" "#8250df
 def editorFont : String :=
   "var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace)"
 
+def editorSize : String := "var(--vscode-editor-font-size, 14px)"
+
 public def region : Entry := style #[
   ("display", "grid"),
   ("gap", "4px"),
@@ -44,7 +46,9 @@ public def region : Entry := style #[
   ("background", background),
   ("color", foreground),
   ("colorScheme", "light dark"),
-  ("fontFamily", "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif")
+  ("fontFamily", "var(--vscode-font-family, ui-sans-serif, system-ui, sans-serif)"),
+  ("fontSize", "var(--vscode-font-size, 13px)"),
+  ("lineHeight", "1.4")
 ]
 
 public def goalList : Entry := style #[
@@ -75,7 +79,7 @@ public def goalHeader : Entry := style #[
 public def goalHeading : Entry := style #[
   ("minWidth", "0"),
   ("margin", "0"),
-  ("fontSize", "0.76rem"),
+  ("fontSize", "1em"),
   ("fontWeight", "760"),
   ("overflowWrap", "anywhere")
 ]
@@ -83,21 +87,21 @@ public def goalHeading : Entry := style #[
 public def goalSummary : Entry := style #[
   ("margin", "0"),
   ("color", muted),
-  ("fontSize", "0.68rem"),
+  ("fontSize", "1em"),
   ("fontWeight", "650"),
   ("overflowWrap", "anywhere")
 ]
 
 public def collapseButton : Entry := style #[
-  ("minWidth", "20px"),
-  ("minHeight", "20px"),
+  ("minWidth", "24px"),
+  ("minHeight", "24px"),
   ("padding", "0 3px"),
   ("border", border borderColor),
   ("borderRadius", "3px"),
   ("background", codeBackground),
   ("color", foreground),
   ("font", "inherit"),
-  ("fontSize", "0.76rem"),
+  ("fontSize", "1em"),
   ("fontWeight", "760"),
   ("cursor", "pointer")
 ]
@@ -137,7 +141,7 @@ public def hypothesis : Entry := style #[
 public def hypothesisName : Entry := style #[
   ("minWidth", "0"),
   ("fontFamily", editorFont),
-  ("fontSize", "0.74rem"),
+  ("fontSize", editorSize),
   ("fontWeight", "760"),
   ("overflowWrap", "anywhere")
 ]
@@ -156,7 +160,7 @@ public def termButton (target : Bool) : Entry := style #[
   ("background", "transparent"),
   ("color", if target then targetAccent else foreground),
   ("fontFamily", editorFont),
-  ("fontSize", if target then "0.76rem" else "0.75rem"),
+  ("fontSize", editorSize),
   ("fontWeight", "400"),
   ("lineHeight", "1.3"),
   ("textAlign", "left"),
@@ -169,7 +173,7 @@ public def termDetails : Entry := style #[
   ("minWidth", "0"),
   ("color", muted),
   ("fontFamily", editorFont),
-  ("fontSize", "0.65rem"),
+  ("fontSize", editorSize),
   ("lineHeight", "1.25"),
   ("whiteSpace", "pre-wrap"),
   ("overflowWrap", "anywhere")
@@ -178,7 +182,7 @@ public def termDetails : Entry := style #[
 public def termCode (target : Bool) : Entry := style #[
   ("minWidth", "0"),
   ("fontFamily", editorFont),
-  ("fontSize", if target then "0.76rem" else "0.75rem"),
+  ("fontSize", editorSize),
   ("lineHeight", "1.3"),
   ("whiteSpace", "pre-wrap"),
   ("overflowWrap", "anywhere"),
@@ -209,6 +213,7 @@ public def glyph : Entry := style #[
   ("display", "inline-block"),
   ("minWidth", "1em"),
   ("fontFamily", editorFont),
+  ("fontSize", editorSize),
   ("fontWeight", "800")
 ]
 

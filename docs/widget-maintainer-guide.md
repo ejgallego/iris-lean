@@ -72,8 +72,9 @@ Lean rendering as the fallback. It must not change context recognition.
 Three kinds of identity deliberately differ:
 
 - Model IDs identify displayed goals/hypotheses within a snapshot. The same
-  persistent hypothesis can occur in several goals. Explicit React list keys
-  are still a follow-up; do not mistake model IDs for installed React keys.
+  persistent hypothesis can occur in several goals. `Client.Component.render`
+  accepts a native optional React key; goals and hypotheses use their model IDs.
+  Tagged-term pieces use their index in the immutable snapshot's piece array.
 - DOM IDs identify *rendered occurrences*. React's `useId` supplies each
   component occurrence with an opaque native ID; related controls reuse that
   exact value without constructing a Lean string.
@@ -92,8 +93,11 @@ or render a text node. The display JSON is the deliberate exception: it becomes
 the typed `WidgetState` domain that the Iris view traverses.
 
 New snapshots currently reset selection and collapse state. Effect cleanup
-suppresses late success and failure; it does not cancel the transport or dispose
-the VIR runtime. Do not infer correspondence across snapshots from spelling.
+retires publication first, then aborts that effect's native request controller.
+The server checks cancellation around inspection and between goal projections.
+A running pretty-printing operation may finish first; keep the late-success and
+late-failure guards even with cancellation. Cleanup does not dispose the VIR
+runtime. Do not infer correspondence across snapshots from spelling.
 Document changes and native RPC session replacement also trigger refresh, even
 when the cursor remains at the same position. The package fingerprint depends
 on widget code, not on proof state, so these refreshes reuse the loaded package.
@@ -117,8 +121,12 @@ recorded results in [the current review](widget-review-435.md). The older
 [4.32 migration note](widget-native-rpc.md) is historical.
 
 Remaining acceptance work includes manual VS Code/theme/screen-reader checks,
-server restart and expired-reference cases, preserving useful RPC error details,
-and React list keys before upstreaming. See the current review for available
+server restart and expired-reference cases, and stable presentation during edits.
+RPC errors now retain native messages and codes until display, and the browser
+suite checks errors, cancellation and absence of React key warnings. A
+test-only server probe in `IrisTest.ProofMode.WidgetRpc` confirms that Lean
+receives cancellation; the harness adds its import only to its in-memory file.
+See the [UI development plan](widget-ui-development.md) for next steps and the current review for available
 upstream bindings, and the historical [VIR API review](vir-widget-api-review.md)
 for earlier dependency findings. No upstream
 issue or PR has been opened by this review.

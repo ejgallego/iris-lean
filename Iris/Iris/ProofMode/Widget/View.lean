@@ -44,12 +44,13 @@ def interactiveTerm (context : Client.Context) : RuntimeM (Client.Component Inte
   Client.Component.ofLean (fun props => do
     let inspection ← Client.useInspection context
     let detailId ← Hooks.useId
-    let nodes ← (termParts props.term.code).mapM fun part =>
+    let nodes ← (termParts props.term.code).zipIdx.mapM fun (part, index) =>
       match if part.text.trimAscii.toString.isEmpty then none else part.reference with
       | none => Html.text part.text
       | some reference => do
         let select ← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => inspection.select reference
-        return ← jsx%{<button type="button" title={(← JsValue.ofString ("Inspect " ++ part.text))}
+        return ← jsx%{<button key={(← JsValue.ofString (toString index))}
+            type="button" title={(← JsValue.ofString ("Inspect " ++ part.text))}
             aria-label={(← JsValue.ofString (props.ariaLabel ++ ": " ++ part.text))}
             aria-expanded={(← JsValue.ofBool (inspection.selected == some reference))}
             aria-controls={detailId} data-term-ref={(← JsValue.ofString (toString reference))}
@@ -57,7 +58,7 @@ def interactiveTerm (context : Client.Context) : RuntimeM (Client.Component Inte
     let nodes : Js.Array Node ← Js.Array.ofArray nodes
     let details : Js.Array Node ← if inspection.selected.isSome then
       let detail ← Node.text inspection.detail
-      Js.Array.ofArray #[← jsx%{<span id={detailId} role="status" style={(← Style.termDetails)}>
+      Js.Array.ofArray #[← jsx%{<span key="inspection" id={detailId} role="status" style={(← Style.termDetails)}>
         {detail}<button type="button" aria-label="Close term inspection"
         onClick={← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => inspection.close}
         style={(← Style.collapseButton)}>×</button></span>}]
@@ -90,8 +91,8 @@ def contextSection (context : Client.Context) : RuntimeM (Client.Component Conte
   let row ← hypothesisRow context
   Client.Component.ofLean (fun props => do
     let label := kindLabel props.kind
-    let values ← props.hypotheses.mapM fun hypothesis =>
-      Client.Component.render row { hypothesis }
+    let values ← props.hypotheses.mapM fun hypothesis => do
+      Client.Component.render row { hypothesis } (some (← JsValue.ofString hypothesis.id))
     let values : Js.Array Node ← Js.Array.ofArray values
     return ← jsx%{<section id={props.id} aria-label={(← JsValue.ofString label)}
       style={(← Style.contextSection (props.kind == .persistent))}><ul role="list"
@@ -140,15 +141,16 @@ def goalCard (context : Client.Context) : RuntimeM (Client.Component GoalProps) 
     if !goal.persistent.isEmpty then
       children := children.push (← Client.Component.render contextView {
         id := persistentId, kind := .persistent, hypotheses := goal.persistent
-      })
+      } (some (← js#"persistent")))
     if !goal.spatial.isEmpty then
       children := children.push (← Client.Component.render contextView {
         id := spatialId, kind := .spatial, hypotheses := goal.spatial
-      })
-    children := children.push (← Client.Component.render targetView { term := goal.target })
+      } (some (← js#"spatial")))
+    children := children.push (← Client.Component.render targetView { term := goal.target }
+      (some (← js#"target")))
     let contents : Js.Array Node ← if expanded then
       let nativeChildren : Js.Array Node ← Js.Array.ofArray children
-      Js.Array.ofArray #[← jsx%{<div id={contentId} style={(← Style.goalContent)}>{nativeChildren}</div>}]
+      Js.Array.ofArray #[← jsx%{<div key="content" id={contentId} style={(← Style.goalContent)}>{nativeChildren}</div>}]
     else Js.Array.empty
     return ← jsx%{<article id={cardId} aria-labelledby={headingId}
       data-goal-id={(← JsValue.ofString goal.id)} style={(← Style.goalCard)}>{header}{contents}</article>})
@@ -157,8 +159,9 @@ def region (context : Client.Context) : RuntimeM (Client.Component (Array Displa
   let card ← goalCard context
   Client.Component.ofLean (fun goals => do
     let regionId ← Hooks.useId
-    let cards ← goals.zipIdx.mapM fun (goal, index) =>
+    let cards ← goals.zipIdx.mapM fun (goal, index) => do
       Client.Component.render card { goal, initiallyExpanded := index == 0 }
+        (some (← JsValue.ofString goal.id))
     let cards : Js.Array Node ← Js.Array.ofArray cards
     return ← jsx%{<section id={regionId}
       data-iris-proof-mode-widget={(← JsValue.ofString "true")} role="region" aria-label="Iris proof mode"
