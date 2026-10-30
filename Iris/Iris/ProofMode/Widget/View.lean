@@ -10,9 +10,8 @@ public import Iris.ProofMode.Widget.Style
 public import Vir.Infoview
 public import Vir.ProofWidgets.Jsx
 
-/-! Native React view for the typed Iris display domain. Keeping this JSX-only
-module separate from the meta RPC registration avoids the upstream widget-parser
-scope while retaining the native panel component contract. -/
+/-! Native React view for the typed Iris display domain. The browser rendering
+layer is independent of the server's meta RPC implementation. -/
 
 public section
 
@@ -49,22 +48,22 @@ def interactiveTerm (context : Client.Context) : RuntimeM (Client.Component Inte
       match if part.text.trimAscii.toString.isEmpty then none else part.reference with
       | none => Html.text part.text
       | some reference => do
-        let select ← Js.Function.ofLeanVoid fun (_ : Js Browser.Event) => inspection.select reference
-        return ← <button type="button" title={(← JsValue.ofString ("Inspect " ++ part.text))}
+        let select ← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => inspection.select reference
+        return ← jsx%{<button type="button" title={(← JsValue.ofString ("Inspect " ++ part.text))}
             aria-label={(← JsValue.ofString (props.ariaLabel ++ ": " ++ part.text))}
             aria-expanded={(← JsValue.ofBool (inspection.selected == some reference))}
             aria-controls={detailId} data-term-ref={(← JsValue.ofString (toString reference))}
-            onClick={select} style={(← Style.termButton props.target)}>{Html.text part.text}</button>
+            onClick={select} style={(← Style.termButton props.target)}>{Html.text part.text}</button>}
     let nodes : Js.Array Node ← Js.Array.ofArray nodes
     let details : Js.Array Node ← if inspection.selected.isSome then
       let detail ← Node.text inspection.detail
-      Js.Array.ofArray #[← <span id={detailId} role="status" style={(← Style.termDetails)}>
+      Js.Array.ofArray #[← jsx%{<span id={detailId} role="status" style={(← Style.termDetails)}>
         {detail}<button type="button" aria-label="Close term inspection"
-        onClick={← Js.Function.ofLeanVoid fun (_ : Js Browser.Event) => inspection.close}
-        style={(← Style.collapseButton)}>×</button></span>]
+        onClick={← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => inspection.close}
+        style={(← Style.collapseButton)}>×</button></span>}]
     else Js.Array.empty
-    return ← <span style={(← Style.interactiveTerm)}><span data-term-id={(← JsValue.ofString props.term.id)}
-      aria-label={(← JsValue.ofString props.ariaLabel)} style={(← Style.termCode props.target)}>{nodes}</span>{details}</span>)
+    return ← jsx%{<span style={(← Style.interactiveTerm)}><span data-term-id={(← JsValue.ofString props.term.id)}
+      aria-label={(← JsValue.ofString props.ariaLabel)} style={(← Style.termCode props.target)}>{nodes}</span>{details}</span>})
 
 structure HypothesisProps where
   hypothesis : DisplayHypothesis
@@ -73,14 +72,14 @@ def hypothesisRow (context : Client.Context) : RuntimeM (Client.Component Hypoth
   let term ← interactiveTerm context
   Client.Component.ofLean (fun props => do
     let hypothesis := props.hypothesis
-    let name ← <span><span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>
+    let name ← jsx%{<span><span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>
       {Html.text (kindGlyph hypothesis.kind)}</span><strong style={(← Style.hypothesisName)}>
-      {Html.text hypothesis.name}</strong></span>
+      {Html.text hypothesis.name}</strong></span>}
     let value ← Client.Component.render term {
       term := hypothesis.proposition
       ariaLabel := "Inspect " ++ kindLabel hypothesis.kind ++ " hypothesis " ++ hypothesis.name
     }
-    return ← <li role="listitem" style={(← Style.hypothesis)}>{name}{value}</li>)
+    return ← jsx%{<li role="listitem" style={(← Style.hypothesis)}>{name}{value}</li>})
 
 structure ContextProps where
   id : Js String
@@ -94,9 +93,9 @@ def contextSection (context : Client.Context) : RuntimeM (Client.Component Conte
     let values ← props.hypotheses.mapM fun hypothesis =>
       Client.Component.render row { hypothesis }
     let values : Js.Array Node ← Js.Array.ofArray values
-    return ← <section id={props.id} aria-label={(← JsValue.ofString label)}
+    return ← jsx%{<section id={props.id} aria-label={(← JsValue.ofString label)}
       style={(← Style.contextSection (props.kind == .persistent))}><ul role="list"
-      aria-label={(← JsValue.ofString (label ++ " hypotheses"))} style={(← Style.hypothesisList)}>{values}</ul></section>)
+      aria-label={(← JsValue.ofString (label ++ " hypotheses"))} style={(← Style.hypothesisList)}>{values}</ul></section>})
 
 structure TargetProps where
   term : RenderedTerm
@@ -107,8 +106,8 @@ def targetSection (context : Client.Context) : RuntimeM (Client.Component Target
     let value ← Client.Component.render term {
       term := props.term, ariaLabel := "Inspect target", target := true
     }
-    return ← <section aria-label="Target" style={(← Style.targetSection)}><div style={(← Style.target)}>
-      <span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>⊢</span>{value}</div></section>)
+    return ← jsx%{<section aria-label="Target" style={(← Style.targetSection)}><div style={(← Style.target)}>
+      <span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>⊢</span>{value}</div></section>})
 
 structure GoalProps where
   goal : DisplayGoal
@@ -127,16 +126,16 @@ def goalCard (context : Client.Context) : RuntimeM (Client.Component GoalProps) 
     let toggleId ← Hooks.useId
     let persistentId ← Hooks.useId
     let spatialId ← Hooks.useId
-    let toggle ← Js.Function.ofLeanVoid fun (_ : Js Browser.Event) => expandedState.set (!expanded)
+    let toggle ← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => expandedState.set (!expanded)
     let summary := s!"□ {goal.persistent.size} · ∗ {goal.spatial.size}"
     let summaryLabel := countLabel goal.persistent.size "persistent" ++ ", " ++ countLabel goal.spatial.size "spatial"
-    let header ← <header style={(← Style.goalHeader)}><h3 id={headingId}
+    let header ← jsx%{<header style={(← Style.goalHeader)}><h3 id={headingId}
       style={(← Style.goalHeading)}>{Html.text goal.title}</h3><p aria-label={(← JsValue.ofString summaryLabel)}
       style={(← Style.goalSummary)}>{Html.text summary}</p><button id={toggleId}
       type="button" title={(← JsValue.ofString (if expanded then "Collapse goal" else "Expand goal"))}
       aria-label={(← JsValue.ofString (if expanded then "Collapse " ++ goal.title else "Expand " ++ goal.title))}
       aria-expanded={(← JsValue.ofBool expanded)} aria-controls={contentId} onClick={toggle}
-      style={(← Style.collapseButton)}>{Html.text (if expanded then "−" else "+")}</button></header>
+      style={(← Style.collapseButton)}>{Html.text (if expanded then "−" else "+")}</button></header>}
     let mut children : Array (Js Node) := #[]
     if !goal.persistent.isEmpty then
       children := children.push (← Client.Component.render contextView {
@@ -149,10 +148,10 @@ def goalCard (context : Client.Context) : RuntimeM (Client.Component GoalProps) 
     children := children.push (← Client.Component.render targetView { term := goal.target })
     let contents : Js.Array Node ← if expanded then
       let nativeChildren : Js.Array Node ← Js.Array.ofArray children
-      Js.Array.ofArray #[← <div id={contentId} style={(← Style.goalContent)}>{nativeChildren}</div>]
+      Js.Array.ofArray #[← jsx%{<div id={contentId} style={(← Style.goalContent)}>{nativeChildren}</div>}]
     else Js.Array.empty
-    return ← <article id={cardId} aria-labelledby={headingId}
-      data-goal-id={(← JsValue.ofString goal.id)} style={(← Style.goalCard)}>{header}{contents}</article>)
+    return ← jsx%{<article id={cardId} aria-labelledby={headingId}
+      data-goal-id={(← JsValue.ofString goal.id)} style={(← Style.goalCard)}>{header}{contents}</article>})
 
 def region (context : Client.Context) : RuntimeM (Client.Component (Array DisplayGoal)) := do
   let card ← goalCard context
@@ -161,10 +160,10 @@ def region (context : Client.Context) : RuntimeM (Client.Component (Array Displa
     let cards ← goals.zipIdx.mapM fun (goal, index) =>
       Client.Component.render card { goal, initiallyExpanded := index == 0 }
     let cards : Js.Array Node ← Js.Array.ofArray cards
-    return ← <section id={regionId}
+    return ← jsx%{<section id={regionId}
       data-iris-proof-mode-widget={(← JsValue.ofString "true")} role="region" aria-label="Iris proof mode"
       style={(← Style.region)}>
-      <div style={(← Style.goalList)}>{cards}</div></section>)
+      <div style={(← Style.goalList)}>{cards}</div></section>})
 
 def snapshotView (context : Client.Context) : RuntimeM (Client.Component WidgetState) := do
   let display ← region context

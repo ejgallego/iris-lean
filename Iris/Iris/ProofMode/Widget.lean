@@ -19,25 +19,20 @@ public section
 namespace Iris.ProofMode.Widget
 
 open Lean.Vir
-open Lean.Vir.Infoview (IRPackage PanelWidgetProps WidgetProps)
-open Lean.Vir.React
+open Lean.Vir.Infoview (WidgetProps)
 
 def runtimeWasmPath : String :=
   ".lake/packages/lean_vir/web/public/vir-upstream.wasm"
 
-@[vir_export]
-def createComponent : RuntimeM (FunctionComponent PanelWidgetProps) :=
-  View.app
+vir_proof_widget View.app
 
-def irPackage : IRPackage :=
-  { roots := #["Iris.ProofMode.Widget.createComponent"] }
+-- Also expose the factory to the standalone `:vir` package smoke test.
+attribute [vir_export] createComponent
 
-def widgetProps : WidgetProps where
+/-- The generated package identity with the runtime path relative to the Iris workspace. -/
+def panelProps : WidgetProps := { widgetProps with
   wasmPath := runtimeWasmPath
-  irPackage
-  componentEntry := "Iris.ProofMode.Widget.createComponent"
-  autoReloadMs := 1000
   setupHint :=
-    "This widget uses the Lean 4.32 VIR runtime. Check the VIR error above; after rebuilding VIR or changing dependencies, restart the Lean server."
+    "This widget uses the Lean 4.35 VIR runtime. See docs/vir-demo-runbook.md for setup; restart the Lean server after changing dependencies." }
 
 end Iris.ProofMode.Widget

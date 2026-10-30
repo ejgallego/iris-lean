@@ -13,7 +13,7 @@ namespace IrisTest.ProofMode.WidgetDemo
 
 open Iris
 
-show_panel_widgets [local Lean.Vir.Infoview.widget with Iris.ProofMode.Widget.widgetProps]
+show_panel_widgets [local Lean.Vir.Infoview.widget with Iris.ProofMode.Widget.panelProps]
 
 /-- Outside Iris proof mode, the widget deliberately renders nothing. -/
 example (n : Nat) : n = n := by

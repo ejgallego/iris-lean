@@ -29,13 +29,14 @@ const runtime = await createVirRuntime({
     reactHostBindings: createBrowserReactHostBindings,
     // SSR evaluates the hook but must never schedule its RPC effect.
     infoviewUseRpcSession: () => ({ call() { throw new Error("SSR must not run an RPC effect"); } }),
+    infoviewUseClientNotificationEffect: () => {},
   }),
 });
 
 try {
   const component = runtime.call("Iris.ProofMode.Widget.createComponent");
   assert.equal(typeof component, "function");
-  const panelProps = { pos: { line: 0, character: 0 } };
+  const panelProps = { pos: { uri: "file:///WidgetDemo.lean", line: 0, character: 0 } };
   const markup = renderToStaticMarkup(React.createElement(component, panelProps));
   assert.match(markup, /Loading Iris goals/);
   console.log(`PASS: ${packages.length} verified package members; native panel component factory and SSR loading shell. Run widget-browser-smoke.mjs for live RPC and interactions.`);

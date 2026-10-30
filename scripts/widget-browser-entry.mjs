@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-import { RpcSessions } from "@leanprover/infoview-api";
+import { RpcSessions, Widget_getWidgets } from "@leanprover/infoview-api";
 import VirInfoviewWidget from "../Iris/.lake/packages/lean_vir/web/app/vir-infoview-widget.js";
 import { until, withCleanup } from "../Iris/.lake/packages/lean_vir/tests/infoview/rpc-test-support.js";
 
@@ -75,23 +75,22 @@ async function run() {
     });
     const sessionAt = position => sessions.connect({ textDocument: { uri: config.uri }, position }, config.capabilities);
     root = createRoot(container, { onUncaughtError: error => errors.push(String(error.stack ?? error)) });
-    const mount = async (position, roots = [prefix + "createComponent"]) => {
+    const mount = async (position, invalidFingerprint = false) => {
       globalThis.irisSession = sessionAt(position);
+      const result = await Widget_getWidgets(globalThis.irisSession, position);
+      const props = result.widgets.find(widget => widget.props.irPackage?.entry === prefix + "createComponent")?.props;
+      check(props?.irPackage.fingerprint, "server must supply the generated package fingerprint");
       await React.act(async () => root.render(React.createElement(React.StrictMode, null,
         React.createElement(VirInfoviewWidget, {
-          wasmPath: ".lake/packages/lean_vir/web/public/vir-upstream.wasm",
-          irPackage: { roots },
-          componentEntry: prefix + "createComponent",
-          pos: { uri: config.uri, ...position }, autoReloadMs: config.autoReloadMs,
+          ...props,
+          irPackage: invalidFingerprint ? { ...props.irPackage, fingerprint: "unavailable-test-generation" } : props.irPackage,
+          pos: { uri: config.uri, ...position },
         }))));
     };
     await mount(config.contexts);
     await waitFor("typed Iris contexts", () => button("P") && button("R"));
-    if (config.autoReloadMs > 0) {
-      const stats = () => calls.filter(call => call.method === "Lean.Vir.Infoview.statIRPackage").length;
-      const baseline = stats();
-      await waitFor("editor auto-refresh polling", () => stats() >= baseline + 2);
-    }
+    const packageCalls = () => calls.filter(call => call.method === "Lean.Vir.Infoview.buildIRPackage").length;
+    const packagesAtStartup = packageCalls();
     check(container.querySelectorAll("article").length === 1, "one initial goal");
     const snapshot = await sessionAt(config.contexts).call(prefix + "state", { pos: config.contexts });
     const payload = JSON.parse(snapshot.display);
@@ -155,6 +154,17 @@ async function run() {
     await click(button("P")); await waitFor("new snapshot inspection", () => detail().includes("P : PROP"));
     await release(oldTerm); check(detail().includes("P : PROP"), "old binder leaked into a new snapshot");
 
+    // An edit at the same cursor must refresh the snapshot without rebuilding code.
+    const statesBeforeEdit = calls.filter(call => call.method === prefix + "state").length;
+    await React.act(async () => {
+      const change = await post("/edit", {});
+      for (const handler of [...globalThis.irisNotificationHandlers]) handler(change);
+    });
+    await waitFor("same-position proof edit", () => button("T") && !button("S"));
+    check(calls.filter(call => call.method === prefix + "state").length > statesBeforeEdit,
+      "document edit must request a new snapshot");
+    check(packageCalls() === packagesAtStartup, "context changes must reuse the fingerprinted package");
+
     const afterUnmount = arm(prefix + "inspect"); rejectNext = true;
     await click(button("R")); await waitFor("unmount failure held", () => afterUnmount.received);
     await React.act(async () => root.render(null));
@@ -163,19 +173,19 @@ async function run() {
     await waitFor("empty outside Iris", () => container.querySelector('[data-vir-infoview-state="ready"]') &&
       !container.textContent.includes("Loading") && !container.querySelector("[data-iris-proof-mode-widget]"));
     // A genuine package RPC failure must keep its message through the shell UI.
-    await mount(config.contexts, [prefix + "noSuchWidgetExport"]);
+    await mount(config.contexts, true);
     await until("readable package failure", async () => {
       await tick();
       return container.querySelector('[data-vir-infoview-state="error"]');
     });
-    check(container.textContent.includes("VIR IR package failed") && container.textContent.includes("-32602") &&
+    check(container.textContent.includes("fingerprint is unavailable") && container.textContent.includes("-32602") &&
       !container.textContent.includes("[object Object]"), `lost native package error: ${container.textContent}`);
     check(errors.length === 0, `uncaught browser failures: ${errors.join("\n")}`);
     return { requests: calls.length, width: innerWidth, cases: ["native keyboard", "canonical text", "contextual subterms",
       "nested binders", "repeated occurrences", "server rejection", "stale selection success/failure", "stale snapshot",
       "goal split", "unique DOM IDs", "shared hypothesis ARIA/close isolation", "late unmount failure",
-      "empty outside Iris", "readable package RPC error", "React Strict Mode",
-      ...(config.autoReloadMs > 0 ? ["auto-refresh", "slow package startup"] : [])] };
+      "same-position proof edit", "package reuse", "empty outside Iris", "readable package RPC error", "React Strict Mode",
+      ...(config.packageDelayMs > 0 ? ["slow package startup"] : [])] };
   }, [
     ["gates", () => { for (const gate of gates) gate.resolve(); }],
     ["root", () => root && React.act(async () => root.unmount())],

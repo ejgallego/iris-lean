@@ -13,27 +13,27 @@ open Lean.Vir.React
 
 public abbrev Entry := RuntimeM Js.Object
 
-private def style (entries : Array (String × String)) : Entry := do
+def style (entries : Array (String × String)) : Entry := do
   let object ← Js.Object.empty
   for (name, value) in entries do
     Js.Construction.field object (← JsValue.ofString name) (← JsValue.ofString value)
   pure object
 
-private def vscodeColor (name fallback : String) : String :=
+def vscodeColor (name fallback : String) : String :=
   "var(--vscode-" ++ name ++ ", " ++ fallback ++ ")"
 
-private def border (color : String) : String :=
+def border (color : String) : String :=
   "1px solid " ++ color
 
-private def foreground : String := vscodeColor "editor-foreground" "#24292f"
-private def background : String := vscodeColor "editor-background" "#ffffff"
-private def muted : String := vscodeColor "descriptionForeground" "#57606a"
-private def borderColor : String := vscodeColor "panel-border" "#d0d7de"
-private def codeBackground : String := vscodeColor "textCodeBlock-background" "#f6f8fa"
-private def persistentAccent : String := vscodeColor "textLink-foreground" "#0969da"
-private def spatialAccent : String := vscodeColor "editorWarning-foreground" "#9a6700"
-private def targetAccent : String := vscodeColor "symbolIcon-keywordForeground" "#8250df"
-private def editorFont : String :=
+def foreground : String := vscodeColor "editor-foreground" "#24292f"
+def background : String := vscodeColor "editor-background" "#ffffff"
+def muted : String := vscodeColor "descriptionForeground" "#57606a"
+def borderColor : String := vscodeColor "panel-border" "#d0d7de"
+def codeBackground : String := vscodeColor "textCodeBlock-background" "#f6f8fa"
+def persistentAccent : String := vscodeColor "textLink-foreground" "#0969da"
+def spatialAccent : String := vscodeColor "editorWarning-foreground" "#9a6700"
+def targetAccent : String := vscodeColor "symbolIcon-keywordForeground" "#8250df"
+def editorFont : String :=
   "var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace)"
 
 public def region : Entry := style #[

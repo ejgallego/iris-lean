@@ -53,15 +53,15 @@ private def sampleState : WidgetState := {
 #guard match (Lean.fromJson? (Lean.toJson sampleState) : Except String WidgetState) with
   | .ok state => state == sampleState
   | .error _ => false
-#guard widgetProps.componentEntry == "Iris.ProofMode.Widget.createComponent"
-#guard widgetProps.autoReloadMs == 1000
+#guard panelProps.irPackage.entry == "Iris.ProofMode.Widget.createComponent"
+#guard !panelProps.irPackage.fingerprint.isEmpty
 #guard sampleState.version == 3
 #guard termParts (.tag 0 (.append #[.text "(", .tag 1 (.text "P"), .text ")"])) ==
   #[{ text := "(", reference := some 0 }, { text := "P", reference := some 1 },
     { text := ")", reference := some 0 }]
 #guard termParts (.text "unknown notation") == #[{ text := "unknown notation", reference := none }]
 
-show_panel_widgets [local Lean.Vir.Infoview.widget with Iris.ProofMode.Widget.widgetProps]
+show_panel_widgets [local Lean.Vir.Infoview.widget with Iris.ProofMode.Widget.panelProps]
 
 section Preview
 

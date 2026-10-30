@@ -2,7 +2,7 @@
 
 The widget is an opt-in companion to the normal infoview. Its application code
 is Lean. VIR supplies React and browser bindings; it does not recognize Iris
-goals. This guide describes the local Lean 4.32.2 prototype, not a proposed
+goals. This guide describes the local Lean 4.35.0 prototype, not a proposed
 change to Iris proof-mode semantics.
 
 ## Start here
@@ -18,10 +18,10 @@ server after changing dependencies or rebuilding the widget package.
 
 Click a tagged span, or focus it and press Enter. Use × to close inspection.
 The [runbook](vir-demo-runbook.md) contains the cache-enabled build command.
-This worktree is pinned to the Lean 4.32 refresh at
-[`e60433a9`](https://github.com/ejgallego/lean-vir/commit/e60433a958643eb4e63650a317e38265e6a896c2).
-A fresh clone can fetch the sources, but still needs the matching Lean 4.32.2
-Wasm runtime built separately; dependency fetching alone is not installation.
+This worktree pins VIR's last mainline Lean 4.35 commit,
+[`81de859a`](https://github.com/ejgallego/lean-vir/commit/81de859a3ba1cb5da8bc5f128af025dd5a40b343).
+Run `node scripts/widget-setup-runtime.mjs` to install its published, verified
+runtime. See the [4.35 review](widget-review-435.md) for migration details.
 
 ## Where to make a change
 
@@ -39,7 +39,8 @@ Wasm runtime built separately; dependency fetching alone is not installation.
 For ordinary layout work, start in the view and style files. You should not
 need to handle `Js.Any`, construct RPC objects, or change Promise callbacks.
 `Client.useInspection` returns ordinary Lean state: `selected : Option Nat`,
-`detail : String`, and `select`/`close` actions. `Client.useState` provides
+`detail : Js String`, and `select`/`close` actions. The native text goes directly
+to a React text node. `Client.useState` provides
 React-backed Lean values for small controls such as goal collapse.
 
 These are normal React hooks: call them unconditionally in component render
@@ -48,8 +49,8 @@ functions. Their state belongs to React, not to a parallel Iris state store.
 serialized server-side `ProofWidgets.Html` type.
 
 Use selective namespace openings for common types and prop builders (`Props`,
-`PanelWidgetProps`, `TaggedText`). In the view, `Component` is the
-ProofWidgets-style facade; retain `React.FunctionComponent` for the native
+`PanelWidgetProps`, `TaggedText`). In the view, `Client.Component` is the
+Lean-valued props facade; retain `React.FunctionComponent` for the native
 panel boundary. Likewise keep `React.Hooks.useState` distinct from the
 Lean-valued `Client.useState` helper.
 Declaration names, RPC method strings and provenance documentation remain fully
@@ -70,8 +71,9 @@ Lean rendering as the fallback. It must not change context recognition.
 
 Three kinds of identity deliberately differ:
 
-- Model IDs identify displayed goals/hypotheses and provide React keys within
-  a snapshot. The same persistent hypothesis can occur in several goals.
+- Model IDs identify displayed goals/hypotheses within a snapshot. The same
+  persistent hypothesis can occur in several goals. Explicit React list keys
+  are still a follow-up; do not mistake model IDs for installed React keys.
 - DOM IDs identify *rendered occurrences*. React's `useId` supplies each
   component occurrence with an opaque native ID; related controls reuse that
   exact value without constructing a Lean string.
@@ -92,6 +94,9 @@ the typed `WidgetState` domain that the Iris view traverses.
 New snapshots currently reset selection and collapse state. Effect cleanup
 suppresses late success and failure; it does not cancel the transport or dispose
 the VIR runtime. Do not infer correspondence across snapshots from spelling.
+Document changes and native RPC session replacement also trigger refresh, even
+when the cursor remains at the same position. The package fingerprint depends
+on widget code, not on proof state, so these refreshes reuse the loaded package.
 
 React's native `useId` supplies a per-instance DOM namespace. Each rendered
 goal, context and inspection control receives its own native IDs, preventing
@@ -108,10 +113,12 @@ Use Beam for focused Lean development, then a Lake dependency build and the
 browser test for changes to client hooks or the view. `lake test` alone does
 not execute the browser scripts. SSR smoke checks package integrity and the
 loading shell; it does not test effects or RPC. See the exact commands and
-recorded results in [the migration note](widget-native-rpc.md).
+recorded results in [the current review](widget-review-435.md). The older
+[4.32 migration note](widget-native-rpc.md) is historical.
 
 Remaining acceptance work includes manual VS Code/theme/screen-reader checks,
 server restart and expired-reference cases, preserving useful RPC error details,
-and a reproducible runtime installation before upstreaming. See the separate
-[VIR API review](vir-widget-api-review.md) for dependency findings. No upstream
+and React list keys before upstreaming. See the current review for available
+upstream bindings, and the historical [VIR API review](vir-widget-api-review.md)
+for earlier dependency findings. No upstream
 issue or PR has been opened by this review.

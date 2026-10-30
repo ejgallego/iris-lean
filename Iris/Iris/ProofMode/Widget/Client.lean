@@ -71,15 +71,8 @@ private def useJsState (initial : Js α) : ReactM (JsState α) := do
     dependency := value
   }
 
-private def asDependencyList (values : Js.Array α) : Js React.DependencyList := by
-  unfold Lean.Vir.Js.Array at values
-  unfold Lean.Vir.React.DependencyList
-  unfold Lean.Vir.Js at *
-  exact values
-
 private def mkDependencyList (deps : Array (Js α)) : RuntimeM (Js React.DependencyList) := do
-  let values ← Js.Array.ofArray deps
-  pure (asDependencyList values)
+  Js.Array.ofArray (deps.map Js.erase)
 
 /-- Build a React effect from Lean setup and cleanup actions without revoking the runtime. -/
 private def useEffect
@@ -183,13 +176,27 @@ private def errorNode (message : String) : ReactM (Js Node) := do
   let children ← Js.Array.ofArray #[← Node.text (← JsValue.ofString message)]
   Node.createElement (← ElementType.tag (← JsValue.ofString "pre")) props children
 
-/-- One effect per actual upstream panel prop object. Each successful snapshot constructs
+/-- Follow document edits and native session replacement as well as panel props.
+    Each successful snapshot constructs
     its view once, so a new snapshot resets selection rather than matching names. -/
 def application (makeView : Context → RuntimeM (Component WidgetState)) :
     RuntimeM (FunctionComponent PanelWidgetProps) :=
   FunctionComponent.ofLean fun input => do
     let session ← useRpcSession
     let position ← PanelWidgetProps.pos input
+    let uri ← PanelPosition.uri position
+    let revision ← Hooks.useState (α := Nat) (← JsValue.ofNat 0)
+    let revisionValue ← Js.Tuple2.first revision
+    let revisionSetter ← Js.Tuple2.second revision
+    let one ← JsValue.ofNat 1
+    let changed ← Js.Function.ofLeanVoid fun (params : Js.Any) => do
+      let document ← Js.Object.get params (← JsValue.ofString "textDocument")
+      let changedUri ← Js.String.fromAny (← Js.Object.get document (← JsValue.ofString "uri"))
+      if ← JsValue.toBool (← Js.String.equal changedUri uri) then
+        let update ← Js.Function.ofLean fun previous => Js.Nat.add previous one
+        Js.Function.callVoid revisionSetter (React.SetStateAction.ofUpdater update)
+    useClientNotificationEffect (← JsValue.ofString "textDocument/didChange") changed
+      (← Js.UndefinedOr.undefined)
     let loading : LoadState := .ok none
     let state ← useState loading
     useEffect
@@ -213,7 +220,7 @@ def application (makeView : Context → RuntimeM (Component WidgetState)) :
           state.set result)
           (state.set (.error "Iris snapshot unavailable; check the Lean server and refresh."))
         LeanRef.toJSL active)
-      deactivate #[input]
+      deactivate #[Js.erase input, Js.erase session, Js.erase revisionValue]
     match state.value with
     | .ok none => Node.text (← JsValue.ofString "Loading Iris goals…")
     | .ok (some loaded) => Component.render loaded.view loaded.state

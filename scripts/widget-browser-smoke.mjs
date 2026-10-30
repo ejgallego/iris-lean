@@ -2,7 +2,7 @@
 // Run after lake build IrisTest.ProofMode.WidgetDemo +Iris.ProofMode.Widget:vir.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
@@ -39,7 +39,20 @@ const bundle = await build({
   }}, { name: "official-session-context", setup(builder) {
     builder.onResolve({ filter: /^@leanprover\/infoview$/ }, () => ({ path: "context", namespace: "iris-test" }));
     builder.onLoad({ filter: /.*/, namespace: "iris-test" }, () => ({
-      contents: "import * as React from 'react'; export const EditorContext = React.createContext(null); export const DocumentPosition = { toTdpp: position => position }; export const TaggedText_stripTags = value => value; export function useClientNotificationEffect() {} export function useRpcSession() { return globalThis.irisSession; }",
+      contents: `import * as React from 'react';
+        export const EditorContext = React.createContext(null);
+        export const DocumentPosition = { toTdpp: position => position };
+        export const TaggedText_stripTags = value => value;
+        export function InteractiveCode() { throw new Error('Iris uses its own tagged-term renderer'); }
+        globalThis.irisNotificationHandlers = new Set();
+        export function useClientNotificationEffect(method, handler, deps) {
+          React.useEffect(() => {
+            if (method !== 'textDocument/didChange') return;
+            globalThis.irisNotificationHandlers.add(handler);
+            return () => globalThis.irisNotificationHandlers.delete(handler);
+          }, deps);
+        }
+        export function useRpcSession() { return globalThis.irisSession; }`,
       resolveDir: fileURLToPath(vir), loader: "js",
     }));
   }}],
@@ -70,9 +83,9 @@ await withCleanup(async () => {
     textDocument: { uri: sourcePath.href, languageId: "lean", version: 1, text: source },
   });
   await bounded(connection.sendRequest("textDocument/waitForDiagnostics", { uri: sourcePath.href, version: 1 }));
+  assert.ok(!diagnostics.some(report => report.diagnostics.some(d => d.severity === 1)), JSON.stringify(diagnostics));
   const config = {
     uri: sourcePath.href, capabilities: initialized.capabilities,
-    autoReloadMs: Number(process.env.IRIS_WIDGET_RELOAD_MS ?? 0),
     packageDelayMs: Number(process.env.IRIS_WIDGET_PACKAGE_DELAY_MS ?? 0),
     contexts: position("widget-position-contexts"), split: position("widget-position-split"),
     binders: position("widget-position-binders"),
@@ -100,6 +113,12 @@ await withCleanup(async () => {
         keepalives.set(sessionId, setInterval(() => connection.sendNotification("$/lean/rpc/keepAlive", {
           uri: sourcePath.href, sessionId,
         }), 5000));
+      } else if (req.url === "/edit") {
+        const text = source.replaceAll(/\bS\b/g, "T");
+        assert.notEqual(text, source, "edit fixture must change the target");
+        result = { textDocument: { uri: sourcePath.href, version: 2 }, contentChanges: [{ text }] };
+        await connection.sendNotification("textDocument/didChange", result);
+        await connection.sendRequest("textDocument/waitForDiagnostics", { uri: sourcePath.href, version: 2 });
       } else if (req.url === "/call") {
         result = await connection.sendRequest("$/lean/rpc/call", body);
       } else if (req.url === "/release") {
@@ -126,6 +145,10 @@ await withCleanup(async () => {
   }
   await cdp.send("Page.bringToFront");
   assert.equal(await evaluate(cdp, "document.activeElement?.textContent"), "P", "term has keyboard focus");
+  if (process.env.IRIS_WIDGET_SCREENSHOT) {
+    const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
+    await writeFile(process.env.IRIS_WIDGET_SCREENSHOT, Buffer.from(data, "base64"));
+  }
   await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13 });
   await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   const result = await bounded(evaluate(cdp, "globalThis.irisAcceptance"));

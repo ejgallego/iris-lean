@@ -31,18 +31,12 @@ display IDs are not semantic references. Inspection remains read-only and
 click/Enter activated, with an inline expression/type result—not full infoview
 hover popups, definition navigation, or mathematical typesetting.
 
-The opt-in prototype targets Lean 4.32.2. The review branch pins VIR
-checkpoint `8032fd3`, adding two [shell fixes](widget-shell-errors.md) over
-the `be6931c` compatibility commit directly above PR #171 at `8750e1b`;
-the exact pin is published on
-[`fix/iris-widget-errors`](https://github.com/ejgallego/lean-vir/tree/fix/iris-widget-errors).
-It supersedes the previous
-`ea9ba047` checkpoint based on PR #166 at `e88f98d`. See the
-[refresh record](vir-v432-refresh.md) for exact identities and validation. The
-matching VIR runtime and exact widget package build locally. Production rollout
-still needs a deterministic
-downstream location for the matching WASM runtime; that packaging concern does
-not alter the widget design.
+The opt-in prototype now targets Lean 4.35.0 and pins VIR's last mainline
+4.35 commit `81de859a3ba1cb5da8bc5f128af025dd5a40b343`. The
+[4.35 review](widget-review-435.md) records the current implementation and
+validation; the [runbook](vir-demo-runbook.md) installs the matching published
+runtime. Later dated sections below preserve earlier design decisions and 4.32
+validation history; their setup commands are superseded by the runbook.
 
 ## 2. Discovery and problem definition
 
