@@ -65,9 +65,12 @@ public structure DisplayGoal where
   target : RenderedTerm
   deriving Repr, BEq, ToJson, FromJson
 
+/-- Shared by the server payload default and the browser compatibility check. -/
+public def widgetStateVersion : Nat := 3
+
 /-- Versioned payload transported from the Lean server to the VIR component. -/
 public structure WidgetState where
-  version : Nat := 3
+  version : Nat := widgetStateVersion
   goals : Array DisplayGoal
   deriving Repr, BEq, ToJson, FromJson
 

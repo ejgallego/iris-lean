@@ -110,10 +110,11 @@ only a rendered leaf; it is never parsed.
 Move the cursor to just after `isplitr`. Two Iris goals appear. Expand and
 collapse the second card.
 
-Message: the component and its local state execute through VIR. A new snapshot
-resets selection and collapse state to avoid
-reattaching references by spelling. `Client.lean` uses native Promises and
-effect cleanup to ignore late success and failure.
+Message: the component and its local state execute through VIR. Refresh keeps
+old goals visible with their semantic actions disabled. Presentation belongs to
+the document in this panel: surviving goal IDs retain collapse, with an ordinal
+fallback when elaboration changes IDs. Every new snapshot resets term inspection. `Client.lean` uses native
+Promises and effect cleanup to ignore late success and failure.
 
 ### 6. Invite Iris feedback — 2 minutes
 

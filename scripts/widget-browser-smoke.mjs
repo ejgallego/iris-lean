@@ -64,6 +64,7 @@ let child, connection, server, chrome, cdp, deadline;
 const keepalives = new Map(), diagnostics = [];
 const pending = new Map(), cancelled = new Set(), completed = new Set();
 let stderr = "";
+let currentSource = source, documentVersion = 1;
 await withCleanup(async () => {
   const timedOut = new Promise((_, reject) => {
     deadline = setTimeout(() => reject(new Error(`Iris browser acceptance timed out: ${stderr}`)), 120000);
@@ -131,11 +132,19 @@ await withCleanup(async () => {
           uri: sourcePath.href, sessionId,
         }), 5000));
       } else if (req.url === "/edit") {
-        const text = source.replaceAll(/\bS\b/g, "T");
-        assert.notEqual(text, source, "edit fixture must change the target");
-        result = { textDocument: { uri: sourcePath.href, version: 2 }, contentChanges: [{ text }] };
+        const kind = body.kind ?? "rename";
+        assert.ok(["rename", "type", "allocate"].includes(kind));
+        let text = kind === "rename" ? currentSource.replaceAll(/\bS\b/g, "T") :
+          currentSource.replace("-- widget-position-split", "-- widget-position-split ");
+        if (kind === "allocate") text = text.replace("  iintro ⟨#HP, #HQR⟩ HQ HS",
+          "  have _widgetPadding : True := True.intro; iintro ⟨#HP, #HQR⟩ HQ HS");
+        assert.notEqual(text, currentSource, "edit fixture must change the document");
+        currentSource = text;
+        result = { textDocument: { uri: sourcePath.href, version: ++documentVersion }, contentChanges: [{ text }] };
         await connection.sendNotification("textDocument/didChange", result);
-        await connection.sendRequest("textDocument/waitForDiagnostics", { uri: sourcePath.href, version: 2 });
+        await connection.sendRequest("textDocument/waitForDiagnostics", { uri: sourcePath.href, version: documentVersion });
+        const lines = text.split("\n"), line = lines.findIndex(line => line.includes("widget-position-split"));
+        result.cursor = { line, character: lines[line].length };
       } else if (req.url === "/call") {
         const token = new CancellationTokenSource();
         pending.set(body.id, token);
@@ -183,6 +192,7 @@ await withCleanup(async () => {
   const result = await bounded(evaluate(cdp, "globalThis.irisAcceptance"));
   assert.equal(result.ok, true, JSON.stringify({ result, diagnostics, stderr }, null, 2));
   assert.ok(!diagnostics.some(report => report.diagnostics.some(d => d.severity === 1)), JSON.stringify(diagnostics));
+  console.log("Continuity observations:", JSON.stringify(result.value.continuity));
   console.log("PASS: Iris native-RPC browser acceptance", result.value);
 }, [
   ["deadline", () => clearTimeout(deadline)],

@@ -36,13 +36,14 @@ private def countLabel (count : Nat) (kind : String) : String :=
   s!"{count} {kind} " ++ if count == 1 then "hypothesis" else "hypotheses"
 
 structure InteractiveTermProps where
+  context : Client.Context
   term : RenderedTerm
   ariaLabel : String
   target : Bool := false
 
-def interactiveTerm (context : Client.Context) : RuntimeM (Client.Component InteractiveTermProps) :=
+def interactiveTerm : RuntimeM (Client.Component InteractiveTermProps) :=
   Client.Component.ofLean (fun props => do
-    let inspection ← Client.useInspection context
+    let inspection ← Client.useInspection props.context
     let detailId ← Hooks.useId
     let nodes ← (termParts props.term.code).zipIdx.mapM fun (part, index) =>
       match if part.text.trimAscii.toString.isEmpty then none else part.reference with
@@ -54,9 +55,10 @@ def interactiveTerm (context : Client.Context) : RuntimeM (Client.Component Inte
             aria-label={(← JsValue.ofString (props.ariaLabel ++ ": " ++ part.text))}
             aria-expanded={(← JsValue.ofBool (inspection.selected == some reference))}
             aria-controls={detailId} data-term-ref={(← JsValue.ofString (toString reference))}
+            disabled={(← JsValue.ofBool (!props.context.enabled))}
             onClick={select} style={(← Style.termButton props.target)}>{Html.text part.text}</button>}
     let nodes : Js.Array Node ← Js.Array.ofArray nodes
-    let details : Js.Array Node ← if inspection.selected.isSome then
+    let details : Js.Array Node ← if props.context.enabled && inspection.selected.isSome then
       let detail ← Node.text inspection.detail
       Js.Array.ofArray #[← jsx%{<span key="inspection" id={detailId} role="status" style={(← Style.termDetails)}>
         {detail}<button type="button" aria-label="Close term inspection"
@@ -67,56 +69,62 @@ def interactiveTerm (context : Client.Context) : RuntimeM (Client.Component Inte
       aria-label={(← JsValue.ofString props.ariaLabel)} style={(← Style.termCode props.target)}>{nodes}</span>{details}</span>})
 
 structure HypothesisProps where
+  context : Client.Context
   hypothesis : DisplayHypothesis
 
-def hypothesisRow (context : Client.Context) : RuntimeM (Client.Component HypothesisProps) := do
-  let term ← interactiveTerm context
+def hypothesisRow : RuntimeM (Client.Component HypothesisProps) := do
+  let term ← interactiveTerm
   Client.Component.ofLean (fun props => do
     let hypothesis := props.hypothesis
     let name ← jsx%{<span><span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>
       {Html.text (kindGlyph hypothesis.kind)}</span><strong style={(← Style.hypothesisName)}>
       {Html.text hypothesis.name}</strong></span>}
     let value ← Client.Component.render term {
+      context := props.context
       term := hypothesis.proposition
       ariaLabel := "Inspect " ++ kindLabel hypothesis.kind ++ " hypothesis " ++ hypothesis.name
-    }
+    } (some (← JsValue.ofString (toString props.context.epoch)))
     return ← jsx%{<li role="listitem" style={(← Style.hypothesis)}>{name}{value}</li>})
 
 structure ContextProps where
+  context : Client.Context
   id : Js String
   kind : ContextKind
   hypotheses : Array DisplayHypothesis
 
-def contextSection (context : Client.Context) : RuntimeM (Client.Component ContextProps) := do
-  let row ← hypothesisRow context
+def contextSection : RuntimeM (Client.Component ContextProps) := do
+  let row ← hypothesisRow
   Client.Component.ofLean (fun props => do
     let label := kindLabel props.kind
     let values ← props.hypotheses.mapM fun hypothesis => do
-      Client.Component.render row { hypothesis } (some (← JsValue.ofString hypothesis.id))
+      Client.Component.render row { hypothesis, context := props.context } (some (← JsValue.ofString hypothesis.id))
     let values : Js.Array Node ← Js.Array.ofArray values
     return ← jsx%{<section id={props.id} aria-label={(← JsValue.ofString label)}
       style={(← Style.contextSection (props.kind == .persistent))}><ul role="list"
       aria-label={(← JsValue.ofString (label ++ " hypotheses"))} style={(← Style.hypothesisList)}>{values}</ul></section>})
 
 structure TargetProps where
+  context : Client.Context
   term : RenderedTerm
 
-def targetSection (context : Client.Context) : RuntimeM (Client.Component TargetProps) := do
-  let term ← interactiveTerm context
+def targetSection : RuntimeM (Client.Component TargetProps) := do
+  let term ← interactiveTerm
   Client.Component.ofLean (fun props => do
     let value ← Client.Component.render term {
+      context := props.context
       term := props.term, ariaLabel := "Inspect target", target := true
-    }
+    } (some (← JsValue.ofString (toString props.context.epoch)))
     return ← jsx%{<section aria-label="Target" style={(← Style.targetSection)}><div style={(← Style.target)}>
       <span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>⊢</span>{value}</div></section>})
 
 structure GoalProps where
+  context : Client.Context
   goal : DisplayGoal
   initiallyExpanded : Bool
 
-def goalCard (context : Client.Context) : RuntimeM (Client.Component GoalProps) := do
-  let contextView ← contextSection context
-  let targetView ← targetSection context
+def goalCard : RuntimeM (Client.Component GoalProps) := do
+  let contextView ← contextSection
+  let targetView ← targetSection
   Client.Component.ofLean (fun props => do
     let goal := props.goal
     let expandedState ← Client.useState props.initiallyExpanded
@@ -140,13 +148,15 @@ def goalCard (context : Client.Context) : RuntimeM (Client.Component GoalProps) 
     let mut children : Array (Js Node) := #[]
     if !goal.persistent.isEmpty then
       children := children.push (← Client.Component.render contextView {
+        context := props.context
         id := persistentId, kind := .persistent, hypotheses := goal.persistent
       } (some (← js#"persistent")))
     if !goal.spatial.isEmpty then
       children := children.push (← Client.Component.render contextView {
+        context := props.context
         id := spatialId, kind := .spatial, hypotheses := goal.spatial
       } (some (← js#"spatial")))
-    children := children.push (← Client.Component.render targetView { term := goal.target }
+    children := children.push (← Client.Component.render targetView { term := goal.target, context := props.context }
       (some (← js#"target")))
     let contents : Js.Array Node ← if expanded then
       let nativeChildren : Js.Array Node ← Js.Array.ofArray children
@@ -155,30 +165,30 @@ def goalCard (context : Client.Context) : RuntimeM (Client.Component GoalProps) 
     return ← jsx%{<article id={cardId} aria-labelledby={headingId}
       data-goal-id={(← JsValue.ofString goal.id)} style={(← Style.goalCard)}>{header}{contents}</article>})
 
-def region (context : Client.Context) : RuntimeM (Client.Component (Array DisplayGoal)) := do
-  let card ← goalCard context
-  Client.Component.ofLean (fun goals => do
+def region : RuntimeM (Client.Component Client.ViewProps) := do
+  let card ← goalCard
+  Client.Component.ofLean (fun props => do
     let regionId ← Hooks.useId
-    let cards ← goals.zipIdx.mapM fun (goal, index) => do
-      Client.Component.render card { goal, initiallyExpanded := index == 0 }
-        (some (← JsValue.ofString goal.id))
+    let cards ← props.state.goals.zipIdx.mapM fun (goal, index) => do
+      Client.Component.render card { goal, initiallyExpanded := index == 0, context := props.context }
+        (some (← JsValue.ofString s!"{props.scope}:{props.keys[index]!}"))
     let cards : Js.Array Node ← Js.Array.ofArray cards
     return ← jsx%{<section id={regionId}
       data-iris-proof-mode-widget={(← JsValue.ofString "true")} role="region" aria-label="Iris proof mode"
       style={(← Style.region)}>
       <div style={(← Style.goalList)}>{cards}</div></section>})
 
-def snapshotView (context : Client.Context) : RuntimeM (Client.Component WidgetState) := do
-  let display ← region context
-  Client.Component.ofLean (fun state => do
-    if state.goals.isEmpty then do
+def snapshotView : RuntimeM (Client.Component Client.ViewProps) := do
+  let display ← region
+  Client.Component.ofLean (fun props => do
+    if props.state.goals.isEmpty then do
       let props ← Js.Object.empty
       let children : Js.Array Node ← Js.Array.empty
       Node.fragment props children
     else
-      Client.Component.render display state.goals)
+      Client.Component.render display props)
 
-def app : RuntimeM (FunctionComponent PanelWidgetProps) :=
-  Client.application snapshotView
+def app : RuntimeM (FunctionComponent PanelWidgetProps) := do
+  Client.application (← snapshotView)
 
 end Iris.ProofMode.Widget.View

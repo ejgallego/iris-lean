@@ -26,6 +26,34 @@ visible. This is a readability improvement, not an accessibility certification.
 
 ## Design process for the next slice
 
+### Editing continuity checkpoint (2026-11-02)
+
+The view's component types are built once. Refresh retains the old goal cards
+with disabled term actions and `aria-busy`, without inserting a routine status
+line or live announcement. Initial loading still has a status; failed refreshes
+retain disabled cards alongside the error; successful empty replies remove them.
+Every accepted snapshot gets a fresh semantic epoch, remounting inspections.
+
+Presentation belongs to the document in the mounted panel, independently of
+position-specific RPC sessions. Surviving goal IDs retain their card keys even
+when their ordinal changes. If elaboration changes IDs, unmatched goals reuse
+unclaimed previous slots at the same ordinal. This fallback carries collapse
+only: it does not establish mathematical identity, and may carry collapse to a
+different goal in that slot. Document changes, panel remounts, and a successful
+empty state reset presentation. Expression references never follow these keys.
+
+The browser regression moves the cursor within the same proof state and back,
+types with cursor movement, and re-elaborates after adding an ordinary local.
+It records goal IDs and checks retained card identity/collapse, no stale RPC,
+fresh semantic nodes, and surviving-goal identity after a preceding goal is
+solved. Held refresh adds no height or live region. Failure/recovery and moving
+outside Iris remain covered. Collapse-control focus is checked across cursor
+moves/edits. Term focus is measured separately: disabling and replacing semantic
+nodes can still lose it. This must inform the native-renderer keyboard review;
+full VS Code focus/scroll and screen-reader behavior remain untested.
+
+### Remaining design work
+
 The goal is fluent proof work: quickly understand a judgment, locate a resource,
 inspect its meaning, and continue editing without losing one's place. Reliability
 and density alone do not make this a finished UI.

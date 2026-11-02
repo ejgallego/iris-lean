@@ -33,8 +33,8 @@ async function run() {
   const calls = [];
   let nextGate, rejectNext = false, sessions, root, nextId = 0, waitNext = false,
     failState = false, malformedState = false, injectedError;
-  const arm = method => {
-    const gate = { method, ...Promise.withResolvers(), received: false, finished: false };
+  const arm = (method, position) => {
+    const gate = { method, position, ...Promise.withResolvers(), received: false, finished: false };
     gates.push(gate); nextGate = gate; return gate;
   };
   const tick = () => React.act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
@@ -65,7 +65,8 @@ async function run() {
         const cancel = () => { record.cancelled = true; notify("/cancel", { id }); };
         options?.abortSignal?.addEventListener("abort", cancel, { once: true });
         if (options?.abortSignal?.aborted) cancel();
-        const gate = nextGate?.method === params.method ? nextGate : null;
+        const gate = nextGate?.method === params.method && (!nextGate.position ||
+          (nextGate.position.line === params.position.line && nextGate.position.character === params.position.character)) ? nextGate : null;
         if (gate) nextGate = null;
         // Deliberate server-side failure injection, not a fabricated Promise rejection.
         if (rejectNext && params.method === prefix + "inspect") {
@@ -243,16 +244,129 @@ async function run() {
     await click(button("P")); await waitFor("new snapshot inspection", () => detail().includes("P : PROP"));
     await release(oldTerm); check(detail().includes("P : PROP"), "old binder leaked into a new snapshot");
 
-    // An edit at the same cursor must refresh the snapshot without rebuilding code.
+    // Continuity uses one mounted panel and real position-specific RPC sessions.
+    await mount(config.split);
+    await waitFor("split before continuity edit", () => container.querySelectorAll("article").length === 2 &&
+      !container.querySelector('[aria-busy="true"]'));
+    const stableCards = [...container.querySelectorAll("article")];
+    await click(stableCards[0].querySelector('header button'));
+    await click(stableCards[1].querySelector('header button'));
+    const idsAt = () => [...container.querySelectorAll("article")].map(card => card.dataset.goalId);
+    const identity = { initial: idsAt() }, focus = {};
+    const checkPresentation = label => {
+      check(stableCards.every(card => card.isConnected), `${label}: cards remounted; IDs=${JSON.stringify(identity)}`);
+      check(stableCards[0].querySelector('header button').getAttribute('aria-expanded') === "false" &&
+        stableCards[1].querySelector('header button').getAttribute('aria-expanded') === "true", `${label}: collapse was lost`);
+    };
+    const cursor = { line: config.split.line - 1, character: 4 };
+    check(sessionAt(cursor) !== sessionAt(config.split), "cursor move must change the native position session");
+    const toggle = stableCards[1].querySelector('header button');
+    toggle.focus();
+    for (const position of [cursor, config.split]) {
+      const heldCursor = arm(prefix + "state", position);
+      await mount(position);
+      await waitFor("cursor reply held", () => heldCursor.received);
+      checkPresentation("pending cursor move");
+      await release(heldCursor);
+      await waitFor("cursor reply committed", () => !container.querySelector('[aria-busy="true"]'));
+      identity.cursor = idsAt();
+      checkPresentation("cursor move and return");
+      check(document.activeElement === toggle, "cursor movement lost presentation-control focus");
+    }
+    const staleButton = [...stableCards[1].querySelectorAll('[data-term-ref]')].find(b => b.textContent === "S");
+    check(staleButton, "expanded second goal has a semantic action");
+    staleButton.focus(); focus.beforeRefresh = document.activeElement === staleButton;
+    const heightBeforeRefresh = container.getBoundingClientRect().height;
     const statesBeforeEdit = calls.filter(call => call.method === prefix + "state").length;
+    const heldRefresh = arm(prefix + "state");
+    let typingCursor;
     await React.act(async () => {
       const change = await post("/edit", {});
+      typingCursor = change.cursor;
       for (const handler of [...globalThis.irisNotificationHandlers]) handler(change);
     });
-    await waitFor("same-position proof edit", () => button("T") && !button("S"));
+    await waitFor("refresh held with old goals", () => heldRefresh.received && container.querySelector('[aria-busy="true"]'));
+    checkPresentation("held same-position edit");
+    focus.duringRefresh = document.activeElement === staleButton;
+    check(!container.querySelector('[role="status"]'), "routine refresh inserted a live announcement");
+    check(container.getBoundingClientRect().height === heightBeforeRefresh, "pending refresh shifted the panel layout");
+    check(staleButton.isConnected && staleButton.disabled, "stale term must remain visible and disabled");
+    const inspectionsBeforeStaleClick = calls.filter(call => call.method === prefix + "inspect").length;
+    await click(staleButton);
+    check(calls.filter(call => call.method === prefix + "inspect").length === inspectionsBeforeStaleClick,
+      "stale activation sent an inspection RPC");
+    await release(heldRefresh);
+    await waitFor("same-position proof edit", () => container.textContent.includes("T") && !container.querySelector('[aria-busy="true"]'));
+    identity.rename = idsAt();
+    checkPresentation("same-position edit");
+    focus.afterRefresh = document.activeElement === staleButton;
+    check(!staleButton.isConnected, "new snapshot reused old semantic components");
     check(calls.filter(call => call.method === prefix + "state").length > statesBeforeEdit,
       "document edit must request a new snapshot");
     check(packageCalls() === packagesAtStartup, "context changes must reuse the fingerprinted package");
+
+    // Typing moves the cursor; allocating an ordinary local forces re-elaboration too.
+    // Both edits preserve the Iris goal count but may change metavariable names.
+    await mount(typingCursor);
+    await waitFor("cursor at comment end before typing", () => !container.querySelector('[aria-busy="true"]'));
+    checkPresentation("cursor before typing");
+    for (const kind of ["type", "allocate"]) {
+      const oldIds = idsAt();
+      const change = await post("/edit", { kind });
+      check(change.cursor.line === typingCursor.line && change.cursor.character === typingCursor.character + 1,
+        "typing must advance the cursor by one character on the same line");
+      typingCursor = change.cursor;
+      check(sessionAt(change.cursor) !== globalThis.irisSession, "edit also changes cursor/session");
+      const heldEdit = arm(prefix + "state", change.cursor);
+      toggle.focus();
+      await React.act(async () => {
+        for (const handler of [...globalThis.irisNotificationHandlers]) handler(change);
+        await mount(change.cursor);
+      });
+      await waitFor("edited cursor response held", () => heldEdit.received);
+      checkPresentation(`pending ${kind}`);
+      const stale = [...stableCards[1].querySelectorAll('[data-term-ref]')];
+      check(stale.every(button => button.disabled), "edit/cursor move left stale actions enabled");
+      const before = calls.filter(call => call.method === prefix + "inspect").length;
+      await click(stale[0]);
+      check(calls.filter(call => call.method === prefix + "inspect").length === before, "edited stale action sent RPC");
+      await release(heldEdit);
+      await waitFor("edited cursor committed", () => !container.querySelector('[aria-busy="true"]'));
+      identity[kind] = { before: oldIds, after: idsAt(), cursor: change.cursor };
+      checkPresentation(`edit and cursor move (${kind})`);
+      check(document.activeElement === toggle, "edit/cursor move lost presentation-control focus");
+      check(stale.every(button => !button.isConnected), "new snapshot retained semantic nodes");
+    }
+    check(identity.allocate.before.some((id, index) => id !== identity.allocate.after[index]),
+      "the real re-elaboration fixture must exercise changed goal IDs");
+
+    // Failed refresh keeps readable, disabled old goals; another update can recover.
+    failState = true;
+    await mount(config.split);
+    await until("refresh failure with retained goals", async () => {
+      await tick(); return container.querySelector('[role="alert"]')?.textContent.includes("-32601");
+    });
+    check(stableCards.every(card => card.isConnected), "refresh failure removed previous goals");
+    check([...container.querySelectorAll('[data-term-ref]')].every(b => b.disabled), "failed refresh left live semantic actions");
+    await mount(config.split);
+    await waitFor("refresh recovery", () => !container.querySelector('[aria-busy="true"]') &&
+      [...container.querySelectorAll('[data-term-ref]')].some(b => !b.disabled));
+    check(stableCards[0].querySelector('header button').getAttribute('aria-expanded') === "false", "recovery lost collapse");
+
+    // A surviving goal keeps its card when a preceding goal is solved: ID matches beat ordinals.
+    await mount({ line: config.split.line + 1, character: config.split.character });
+    await waitFor("first goal solved", () => !container.querySelector('[aria-busy="true"]') && container.querySelectorAll("article").length === 1);
+    check(container.querySelector("article") === stableCards[1], "surviving goal lost its card when its ordinal changed");
+    check(stableCards[1].querySelector('header button').getAttribute('aria-expanded') === "true", "surviving goal lost collapse state");
+
+    const leaveIris = arm(prefix + "state");
+    await mount(config.ordinary);
+    await waitFor("outside-Iris response held", () => leaveIris.received);
+    check(stableCards[1].isConnected, "navigation cleared goals before receiving its result");
+    await release(leaveIris);
+    await waitFor("outside-Iris clears old goals", () => !container.querySelector('[data-iris-proof-mode-widget]'));
+    await mount(config.contexts);
+    await waitFor("return from empty state starts presentation", () => button("R") && button("T") && !button("R").disabled);
 
     const afterUnmount = arm(prefix + "inspect"); rejectNext = true;
     await click(button("R")); await waitFor("unmount failure held", () => afterUnmount.received);
@@ -273,11 +387,13 @@ async function run() {
       !container.textContent.includes("[object Object]"), `lost native package error: ${container.textContent}`);
     check(errors.length === 0, `uncaught browser failures: ${errors.join("\n")}`);
     check(keyWarnings.length === 0, `React key warnings: ${keyWarnings.join("\n")}`);
-    return { requests: calls.length, width: innerWidth, fontSize: config.fontSize, theme: config.theme,
+    return { requests: calls.length, width: innerWidth, fontSize: config.fontSize, theme: config.theme, continuity: { identity, focus },
       cases: ["editor font size", "native keyboard", "canonical text", "contextual subterms",
       "nested binders", "repeated occurrences", "server rejection", "stale selection success/failure", "stale snapshot",
       "goal split", "unique DOM IDs", "shared hypothesis ARIA/close isolation", "late unmount failure",
       "same-position proof edit", "package reuse", "empty outside Iris", "readable package RPC error", "React Strict Mode",
+      "retained goals during refresh", "disabled stale actions", "collapse continuity", "refresh failure/recovery",
+      "cursor move and return", "typing with cursor movement", "goal ID churn", "surviving goal reordered",
       "native RPC diagnostics", "snapshot/decoding errors", "server-observed cancellation", "no React key warnings",
       ...(config.packageDelayMs > 0 ? ["slow package startup"] : [])] };
   }, [

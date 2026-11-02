@@ -35,6 +35,8 @@ structure Context where
   session : Js RpcSession
   snapshot : Js.Any
   active : RuntimeRef Bool
+  epoch : Nat
+  enabled : Bool := true
 
 /-- React state containing a Lean value and the exact native dependency object. -/
 structure State (α : Type) where
@@ -176,22 +178,23 @@ def useInspection (context : Context) : ReactM Inspection := do
       let lease ← RequestLease.create
       if let some reference := selected.value then
         detail.set (.text (← JsValue.ofString "Inspecting…"))
-        if ← context.active.get then
+        if context.enabled && (← context.active.get) then
           let pending ← inspect context reference (← lease.options)
           observe lease.active pending (fun value => do if ← context.active.get then detail.set (.text value))
             (fun error => do if ← context.active.get then detail.set (.failed error))
       else
         detail.set (.text (← JsValue.ofString ""))
       LeanRef.toJSL lease)
-    retire #[selected.dependency]
+    retire #[Js.erase selected.dependency, Js.erase (← JsValue.ofBool context.enabled)]
   let text ← match detail.value with
     | .text value => pure value
     | .failed error => failureText "Inspection unavailable" error
   return {
     selected := selected.value
     detail := text
-    select := fun reference =>
-      if selected.value == some reference then pure () else selected.set (some reference)
+    select := fun reference => do
+      if context.enabled && (← context.active.get) && selected.value != some reference then
+        selected.set (some reference)
     close := selected.set none
   }
 
@@ -204,16 +207,43 @@ private def request (session : Js RpcSession) (position : Js PanelPosition) (opt
 
 structure Loaded where
   state : WidgetState
-  view : Component WidgetState
+  context : Context
+  scope : Nat
+  /-- Presentation only: never used for an RPC or to identify a semantic reference. -/
+  keys : Array Nat
+
+/-- Presentation survives refreshes; semantic context always belongs to one snapshot. -/
+abbrev ViewProps := Loaded
+
+/-- Keep surviving goal IDs first, then reuse unclaimed ordinal slots when elaboration
+    changes IDs. Only collapse/card identity follows these keys, never term inspection. -/
+private def presentationKeys (previous : Option Loaded) (scope : Nat)
+    (goals : Array DisplayGoal) (fresh : RuntimeM Nat) : RuntimeM (Array Nat) := do
+  let previous := previous.filter (·.scope == scope)
+  let oldGoals := (previous.map (·.state.goals)).getD #[]
+  let oldKeys := (previous.map (·.keys)).getD #[]
+  let matched := goals.map fun goal => do
+    let index ← oldGoals.findIdx? (·.id == goal.id)
+    oldKeys[index]?
+  let claimed := matched.filterMap id
+  goals.zipIdx.mapM fun (_, index) => do
+    if let some key := matched[index]! then return key
+    if let some key := oldKeys[index]? then
+      if !claimed.contains key then return key
+    fresh
 
 inductive LoadError where
   | invalid (message : String)
   | rpc (error : Js.Any)
 
-abbrev LoadState := Except LoadError (Option Loaded)
+structure LoadState where
+  loaded : Option Loaded := none
+  pending : Bool := true
+  error : Option LoadError := none
 
 private def errorNode (message : Js String) : ReactM (Js Node) := do
   let props ← Js.Object.empty
+  Js.Object.set props (← JsValue.ofString "key") (← JsValue.ofString "error")
   Js.Object.set props (← JsValue.ofString "role") (← JsValue.ofString "alert")
   let style ← Js.Object.empty
   Js.Object.set style (← JsValue.ofString "whiteSpace") (← JsValue.ofString "pre-wrap")
@@ -222,15 +252,22 @@ private def errorNode (message : Js String) : ReactM (Js Node) := do
   let children ← Js.Array.ofArray #[← Node.text message]
   Node.createElement (← ElementType.tag (← JsValue.ofString "pre")) props children
 
-/-- Follow document edits and native session replacement as well as panel props.
-    Each successful snapshot constructs
-    its view once, so a new snapshot resets selection rather than matching names. -/
-def application (makeView : Context → RuntimeM (Component WidgetState)) :
-    RuntimeM (FunctionComponent PanelWidgetProps) :=
+/-- Presentation belongs to a document in this mounted panel, independently of the
+    position-specific RPC session. Every response gets a fresh semantic epoch. -/
+def application (view : Component ViewProps) : RuntimeM (FunctionComponent PanelWidgetProps) := do
+  let serial ← RuntimeRef.new 0
+  let fresh := do
+    let value ← serial.get
+    serial.set (value + 1)
+    pure value
   FunctionComponent.ofLean fun input => do
     let session ← useRpcSession
     let position ← PanelWidgetProps.pos input
     let uri ← PanelPosition.uri position
+    -- Native strings compare by value; cursor moves/session replacement keep this scope.
+    let scope ← LeanRef.fromJSL (← Hooks.useMemo
+      (← Js.Function.ofLean0 do LeanRef.toJSL (← fresh))
+      (← mkDependencyList #[Js.erase uri]))
     let revision ← Hooks.useState (α := Nat) (← JsValue.ofNat 0)
     let revisionValue ← Js.Tuple2.first revision
     let revisionSetter ← Js.Tuple2.second revision
@@ -243,34 +280,49 @@ def application (makeView : Context → RuntimeM (Component WidgetState)) :
         Js.Function.callVoid revisionSetter (React.SetStateAction.ofUpdater update)
     useClientNotificationEffect (← JsValue.ofString "textDocument/didChange") changed
       (← Js.UndefinedOr.undefined)
-    let loading : LoadState := .ok none
-    let state ← useState loading
+    let state ← useState ({} : LoadState)
     useEffect
       (do
         let lease ← RequestLease.create
-        state.set loading
+        state.set { state.value with pending := true, error := none }
         let pending ← request session position (← lease.options)
         observe lease.active pending (fun reply => do
           let display ← JsValue.toString (← Js.String.fromAny
             (← Js.Object.get reply (← JsValue.ofString "display")))
           let decoded := Lean.Json.parse display >>= Lean.fromJson? (α := WidgetState)
           let result ← match decoded with
-            | .error error => pure (.error (.invalid ("Invalid Iris snapshot: " ++ error)) : LoadState)
+            | .error error => pure { state.value with pending := false, error := some (.invalid ("Invalid Iris snapshot: " ++ error)) }
             | .ok payload =>
-              if payload.version != 3 then
-                pure (.error (.invalid "Unsupported Iris widget snapshot version") : LoadState)
+              if payload.version != widgetStateVersion then
+                pure { state.value with pending := false, error := some (.invalid "Unsupported Iris widget snapshot version") }
               else do
                 let snapshot ← Js.Object.get reply (← JsValue.ofString "snapshot")
-                let view ← makeView { session, snapshot, active := lease.active }
-                pure (.ok (some { state := payload, view }) : LoadState)
+                let context := { session, snapshot, active := lease.active, epoch := ← fresh : Context }
+                let keys ← presentationKeys state.value.loaded scope payload.goals fresh
+                pure { pending := false, loaded := some { state := payload, scope, context, keys } }
           state.set result)
-          (fun error => state.set (.error (.rpc error)))
+          (fun error => state.set { state.value with pending := false, error := some (.rpc error) })
         LeanRef.toJSL lease)
       retire #[Js.erase input, Js.erase session, Js.erase revisionValue]
-    match state.value with
-    | .ok none => Node.text (← JsValue.ofString "Loading Iris goals…")
-    | .ok (some loaded) => Component.render loaded.view loaded.state
-    | .error (.invalid error) => errorNode (← JsValue.ofString error)
-    | .error (.rpc error) => errorNode (← failureText "Iris snapshot unavailable" error)
+    let mut children := #[]
+    if let some loaded := state.value.loaded then
+      let enabled := !state.value.pending && state.value.error.isNone && (← loaded.context.active.get)
+      children := children.push (← Component.render view {
+        loaded with context := { loaded.context with enabled } } (some (← JsValue.ofString "goals")))
+    -- Routine refresh uses aria-busy only: no extra line or live announcement per keystroke.
+    if state.value.pending && state.value.loaded.isNone then
+      let props ← Js.Object.empty
+      Js.Object.set props (← JsValue.ofString "role") (← JsValue.ofString "status")
+      Js.Object.set props (← JsValue.ofString "key") (← JsValue.ofString "pending")
+      children := children.push (← Node.createElement (← ElementType.tag (← JsValue.ofString "div")) props
+        (← Js.Array.ofArray #[← Node.text (← JsValue.ofString "Loading Iris goals…")]))
+    if let some error := state.value.error then
+      let message ← match error with
+        | .invalid message => JsValue.ofString message
+        | .rpc error => failureText "Iris snapshot unavailable" error
+      children := children.push (← errorNode message)
+    let props ← Js.Object.empty
+    Js.Object.set props (← JsValue.ofString "aria-busy") (← JsValue.ofBool state.value.pending)
+    Node.createElement (← ElementType.tag (← JsValue.ofString "div")) props (← Js.Array.ofArray children)
 
 end Iris.ProofMode.Widget.Client
