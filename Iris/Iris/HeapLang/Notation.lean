@@ -336,9 +336,11 @@ partial def unexpValLit : Term → DelabM Term
 def unexpVal : Delab := do
   if ← getPPOption getPPExplicit then failure
   let e ← SubExpr.getExpr
-  let_expr ToVal.ofVal exp val _ v := e | failure
+  let_expr ToVal.ofVal exp val _ _ := e | failure
   if !exp.isConstOf ``Exp && !val.isConstOf ``Val then failure
-  let v ← delab v
+  -- Stay in this delaboration's position/info map so interactive references to
+  -- the embedded value cannot collide with tags elsewhere in the surrounding WP.
+  let v ← SubExpr.withAppArg Delaborator.delab
   unexpValLit <| ← `(hl(v($(← unpackHLVal v))))
 
 @[app_unexpander Exp.var]

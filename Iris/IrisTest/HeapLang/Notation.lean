@@ -6,6 +6,7 @@ Authors: Michael Sammler
 module
 
 public import Iris.HeapLang
+public meta import Lean.Widget.InteractiveCode
 
 @[expose] public section
 namespace IrisTest.HeapLang
@@ -442,5 +443,52 @@ example : hl(&a ^^^ &b ^^^ &c) = hl((&a ^^^ &b) ^^^ &c) := rfl
 #eval return (Lean.Parser.runParserCategory (← Lean.getEnv) `term "hl(&a <= &b < &c)").toBool
 
 end assoc
+
+section tagged
+
+open Lean Meta Widget Elab.Tactic
+
+/-- Check semantic tags, not just printed spelling, without the Iris widget. -/
+private meta partial def checkTaggedLocal (code : CodeWithInfos) (name : String)
+    (expected expectedType : Expr) : MetaM Nat := do
+  match code with
+  | .text _ => return 0
+  | .append children => return (← children.mapM (checkTaggedLocal · name expected expectedType)).foldl (· + ·) 0
+  | .tag tag body =>
+    let count ← checkTaggedLocal body name expected expectedType
+    if body.stripTags != name then return count
+    let info := tag.info.val
+    let term ← match info.info with
+      | .ofTermInfo term => pure term
+      | .ofDelabTermInfo term => pure term.toTermInfo
+      | _ => throwError "expected term information for {name}"
+    unless term.expr == expected do
+      throwError "incorrect expression tag for {name}: {term.expr}"
+    info.ctx.runMetaM term.lctx do
+      unless ← isDefEq (← inferType term.expr) expectedType do
+        throwError "incorrect contextual type for {name}"
+    return count + 1
+
+-- An embedded location/value must keep its original subexpression position.
+-- A separate top-level delaboration reuses positions and drops its info map;
+-- surrounding terms can then silently supply the wrong hover expression.
+example (l : Loc) (v : Val) : l = l ∧ v = v := by
+  run_tac do
+    withMainContext do
+      let l := (← getLocalDeclFromUserName `l).toExpr
+      let v := (← getLocalDeclFromUserName `v).toExpr
+      let ls := mkIdent `l
+      let vs := mkIdent `v
+      let expr ← Elab.Term.elabTerm (← `((hl(v(#$ls) ← &$vs; !v(#$ls)), $ls, $vs))) none
+      let code ← ppExprTagged expr
+      unless code.stripTags == (← ppExpr expr).pretty do
+        throwError "tagging changed the canonical HeapLang text"
+      for (name, expected, occurrences) in [("l", l, 3), ("v", v, 2)] do
+        let count ← checkTaggedLocal code name expected (← inferType expected)
+        unless count >= occurrences do
+          throwError "missing embedded {name} tags: expected at least {occurrences}, got {count}"
+  exact ⟨rfl, rfl⟩
+
+end tagged
 
 end IrisTest.HeapLang
