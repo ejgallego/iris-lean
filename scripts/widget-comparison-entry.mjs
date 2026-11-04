@@ -32,6 +32,7 @@ async function run() {
   const methods = [], errors = [], samples = [], facts = {}, pending = {}, sessions = new Set();
   const notifications = new Set(), subscriptions = new Set(), navigations = [];
   let runtime, infoview, sequence = 0, requestId = 0, trial = null, observer, latestNativeFmt;
+  const productionCodes = new WeakSet();
   const originalError = console.error;
   console.error = (...args) => { errors.push(args.map(String).join(" ")); originalError(...args); };
   const notify = (path, body) => {
@@ -70,7 +71,7 @@ async function run() {
     const createElement = bindings["react.node.createElement"];
     bindings["react.node.createElement"] = (type, props, children) => {
       if (type === InteractiveCode) {
-        check(props.fmt === latestNativeFmt, "native fmt must retain its exact registered JS object");
+        check(props.fmt === latestNativeFmt || productionCodes.has(props.fmt), "native fmt must retain its exact registered JS object");
         exactNativeElements++;
       }
       return createElement(type, props, children);
@@ -113,6 +114,7 @@ async function run() {
         if (options?.abortSignal?.aborted) cancel();
         try {
           const result = await post("/call", { id, params });
+          if (params.method === "Iris.ProofMode.Widget.state") result.codes.forEach(code => productionCodes.add(code));
           const received = performance.now();
           const renderer = params.method === "Iris.ProofMode.Widget.state" ? "current" :
             params.method === "IrisTest.ProofMode.WidgetCompare.target" ? "native" : null;

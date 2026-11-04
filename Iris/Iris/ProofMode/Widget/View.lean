@@ -41,32 +41,21 @@ structure InteractiveTermProps where
   ariaLabel : String
   target : Bool := false
 
-def interactiveTerm : RuntimeM (Client.Component InteractiveTermProps) :=
+/-- The exact upstream component receives the original tagged-code object. Stale
+    snapshots render plain text, unmounting all native popups and semantic handlers. -/
+def interactiveTerm : RuntimeM (Client.Component InteractiveTermProps) := do
+  let native ← Lean.Vir.Infoview.interactiveCode
   Client.Component.ofLean (fun props => do
-    let inspection ← Client.useInspection props.context
-    let detailId ← Hooks.useId
-    let nodes ← (termParts props.term.code).zipIdx.mapM fun (part, index) =>
-      match if part.text.trimAscii.toString.isEmpty then none else part.reference with
-      | none => Html.text part.text
-      | some reference => do
-        let select ← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => inspection.select reference
-        return ← jsx%{<button key={(← JsValue.ofString (toString index))}
-            type="button" title={(← JsValue.ofString ("Inspect " ++ part.text))}
-            aria-label={(← JsValue.ofString (props.ariaLabel ++ ": " ++ part.text))}
-            aria-expanded={(← JsValue.ofBool (inspection.selected == some reference))}
-            aria-controls={detailId} data-term-ref={(← JsValue.ofString (toString reference))}
-            disabled={(← JsValue.ofBool (!props.context.enabled))}
-            onClick={select} style={(← Style.termButton props.target)}>{Html.text part.text}</button>}
-    let nodes : Js.Array Node ← Js.Array.ofArray nodes
-    let details : Js.Array Node ← if props.context.enabled && inspection.selected.isSome then
-      let detail ← Node.text inspection.detail
-      Js.Array.ofArray #[← jsx%{<span key="inspection" id={detailId} role="status" style={(← Style.termDetails)}>
-        {detail}<button type="button" aria-label="Close term inspection"
-        onClick={← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => inspection.close}
-        style={(← Style.collapseButton)}>×</button></span>}]
-    else Js.Array.empty
+    let enabled := props.context.enabled && (← props.context.active.get)
+    let value ← if enabled then do
+      let code ← Js.Object.get props.context.codes (← JsValue.ofString (toString props.term.codeIndex))
+      let nativeProps ← Js.Object.empty
+      Js.Object.set nativeProps (← JsValue.ofString "fmt") code
+      Node.functionComponent native nativeProps (← Js.Array.empty)
+    else Html.text props.term.text
     return ← jsx%{<span style={(← Style.interactiveTerm)}><span data-term-id={(← JsValue.ofString props.term.id)}
-      aria-label={(← JsValue.ofString props.ariaLabel)} style={(← Style.termCode props.target)}>{nodes}</span>{details}</span>})
+      data-term-active={(← JsValue.ofBool enabled)} aria-label={(← JsValue.ofString props.ariaLabel)}
+      style={(← Style.termCode props.target)}>{value}</span></span>})
 
 structure HypothesisProps where
   context : Client.Context
@@ -82,7 +71,7 @@ def hypothesisRow : RuntimeM (Client.Component HypothesisProps) := do
     let value ← Client.Component.render term {
       context := props.context
       term := hypothesis.proposition
-      ariaLabel := "Inspect " ++ kindLabel hypothesis.kind ++ " hypothesis " ++ hypothesis.name
+      ariaLabel := kindLabel hypothesis.kind ++ " hypothesis " ++ hypothesis.name
     } (some (← JsValue.ofString (toString props.context.epoch)))
     return ← jsx%{<li role="listitem" style={(← Style.hypothesis)}>{name}{value}</li>})
 
@@ -112,7 +101,7 @@ def targetSection : RuntimeM (Client.Component TargetProps) := do
   Client.Component.ofLean (fun props => do
     let value ← Client.Component.render term {
       context := props.context
-      term := props.term, ariaLabel := "Inspect target", target := true
+      term := props.term, ariaLabel := "Target", target := true
     } (some (← JsValue.ofString (toString props.context.epoch)))
     return ← jsx%{<section aria-label="Target" style={(← Style.targetSection)}><div style={(← Style.target)}>
       <span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>⊢</span>{value}</div></section>})

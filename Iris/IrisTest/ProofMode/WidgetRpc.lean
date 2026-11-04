@@ -14,13 +14,13 @@ public meta section
 namespace IrisTest.ProofMode.WidgetRpc
 
 open Lean.Server
-open Iris.ProofMode.Widget (InspectRequest)
+open Iris.ProofMode.Widget (StateRequest)
 
 initialize started : IO.Ref Nat ← IO.mkRef 0
 initialize cancelled : IO.Ref Nat ← IO.mkRef 0
 
 @[server_rpc_method]
-def waitForCancellation (_ : InspectRequest) : RequestM (RequestTask String) :=
+def waitForCancellation (_ : StateRequest) : RequestM (RequestTask String) :=
   RequestM.asTask do
     started.modify (· + 1)
     let context ← readThe RequestContext

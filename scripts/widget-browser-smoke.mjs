@@ -45,35 +45,16 @@ const bundle = await build({
       }));
     }
   }}, { name: "official-session-context", setup(builder) {
-    if (comparison) {
-      builder.onResolve({ filter: /^react-dom$/ }, args => {
-        if (args.importer.includes("@leanprover/infoview/dist/"))
-          return { path: fileURLToPath(new URL("tests/infoview/react-dom-compat.js", vir)) };
-      });
-      return;
-    }
-    builder.onResolve({ filter: /^@leanprover\/infoview$/ }, () => ({ path: "context", namespace: "iris-test" }));
-    builder.onLoad({ filter: /.*/, namespace: "iris-test" }, () => ({
-      contents: `import * as React from 'react';
-        export const EditorContext = React.createContext(null);
-        export const DocumentPosition = { toTdpp: position => position };
-        export const TaggedText_stripTags = value => value;
-        export function InteractiveCode() { throw new Error('Iris uses its own tagged-term renderer'); }
-        globalThis.irisNotificationHandlers = new Set();
-        export function useClientNotificationEffect(method, handler, deps) {
-          React.useEffect(() => {
-            if (method !== 'textDocument/didChange') return;
-            globalThis.irisNotificationHandlers.add(handler);
-            return () => globalThis.irisNotificationHandlers.delete(handler);
-          }, deps);
-        }
-        export function useRpcSession() { return globalThis.irisSession; }`,
-      resolveDir: fileURLToPath(vir), loader: "js",
-    }));
+    builder.onResolve({ filter: /^react-dom$/ }, args => {
+      if (args.importer.includes("@leanprover/infoview/dist/"))
+        return { path: fileURLToPath(new URL("tests/infoview/react-dom-compat.js", vir)) };
+    });
   }}],
 });
 
-const comparisonAssets = {};
+const comparisonAssets = {
+  "/infoview.css": ["text/css", await readFile(new URL("node_modules/@leanprover/infoview/dist/index.css", vir))],
+};
 if (comparison) {
   const descriptorUrl = new URL(".lake/build/vir/module-sets/IrisTest/ProofMode/WidgetCompare.irpkg-set.json", iris);
   const descriptor = JSON.parse(await readFile(descriptorUrl, "utf8"));
@@ -152,9 +133,9 @@ await withCleanup(async () => {
       if (req.method === "GET") {
         const assets = {
           "/": ["text/html", `<!doctype html><meta charset="utf-8"><style>
-            :root { ${themes[config.theme]}; --vscode-editor-font-size:${config.fontSize}px; ${comparison ? '--vscode-editor-font-family:ui-monospace,monospace; --vscode-font-family:system-ui,sans-serif;' : ''} }
+            :root { ${themes[config.theme]}; --vscode-editor-font-size:${config.fontSize}px; --vscode-editor-font-family:ui-monospace,monospace; --vscode-font-family:system-ui,sans-serif; }
             body { background:var(--vscode-editor-background); color:var(--vscode-editor-foreground); }
-            </style>${comparison ? '<link rel="stylesheet" href="/infoview.css">' : ''}<div id="app"></div><script ${demo ? 'type="module"' : ""} src="/test.js"></script>`],
+            </style><link rel="stylesheet" href="/infoview.css"><div id="app"></div><script ${demo ? 'type="module"' : ""} src="/test.js"></script>`],
           "/test.js": ["text/javascript", bundle.outputFiles[0].contents],
           "/config": ["application/json", JSON.stringify(config)],
           ...comparisonAssets,
@@ -273,25 +254,36 @@ await withCleanup(async () => {
       exactNativeElements: result.value.exactNativeElements, navigation: result.value.navigation });
     return;
   }
-  // Drive actual browser keyboard activation, not a synthetic click claiming to test Enter.
-  for (;;) {
-    const status = await bounded(evaluate(cdp, "({phase: globalThis.irisPhase, failure: globalThis.irisFailure})"));
-    if (status.failure) throw new Error(status.failure);
-    if (status.phase === "keyboard") break;
-    await bounded(new Promise(resolve => setTimeout(resolve, 50)));
+  let handled;
+  while (!await bounded(evaluate(cdp, "Boolean(globalThis.irisResult)"))) {
+    const action = await evaluate(cdp, "globalThis.irisAction");
+    if (action && action.id !== handled) {
+      handled = action.id;
+      if (action.kind === "key") {
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13 });
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+      } else {
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: action.x, y: action.y });
+        if (action.kind === "click") {
+          await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: action.x, y: action.y, button: "left", clickCount: 1, modifiers: 2 });
+          await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: action.x, y: action.y, button: "left", clickCount: 1, modifiers: 2 });
+        }
+      }
+      await evaluate(cdp, `globalThis.irisActionDone = ${action.id}`);
+    }
+    if (await evaluate(cdp, "Boolean(globalThis.irisCapture)")) {
+      if (process.env.IRIS_WIDGET_SCREENSHOT) {
+        const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
+        await writeFile(process.env.IRIS_WIDGET_SCREENSHOT, Buffer.from(data, "base64"));
+      }
+      await evaluate(cdp, "globalThis.irisCapture = false; globalThis.irisCaptured = true");
+    }
+    await bounded(new Promise(resolve => setTimeout(resolve, 20)));
   }
-  await cdp.send("Page.bringToFront");
-  assert.equal(await evaluate(cdp, "document.activeElement?.textContent"), "P", "term has keyboard focus");
-  if (process.env.IRIS_WIDGET_SCREENSHOT) {
-    const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
-    await writeFile(process.env.IRIS_WIDGET_SCREENSHOT, Buffer.from(data, "base64"));
-  }
-  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13 });
-  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-  const result = await bounded(evaluate(cdp, "globalThis.irisAcceptance"));
+  const result = await evaluate(cdp, "globalThis.irisResult");
   assert.equal(result.ok, true, JSON.stringify({ result, diagnostics, stderr }, null, 2));
   assert.ok(!diagnostics.some(report => report.diagnostics.some(d => d.severity === 1)), JSON.stringify(diagnostics));
-  console.log("Continuity observations:", JSON.stringify(result.value.continuity));
+  if (process.env.IRIS_WIDGET_RESULT) await writeFile(process.env.IRIS_WIDGET_RESULT, JSON.stringify(result.value, null, 2) + "\n");
   console.log("PASS: Iris native-RPC browser acceptance", result.value);
 }, [
   ["deadline", () => clearTimeout(deadline)],

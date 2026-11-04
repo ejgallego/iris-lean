@@ -24,7 +24,7 @@ public meta section
 namespace Iris.ProofMode.Widget
 
 open Lean Lean.Meta Lean.Server Qq
-open Lean.Widget (CodeWithInfos InteractiveGoal TaggedText ppExprTagged)
+open Lean.Widget (CodeWithInfos InteractiveGoal ppExprTagged)
 open Iris.BI
 
 /-- Cursor position supplied by VIR when refreshing the widget. -/
@@ -32,42 +32,14 @@ structure StateRequest where
   pos : Lsp.Position
   deriving RpcEncodable
 
-/-- Only this adapter consumes delaborator info nodes; the wire never exposes them. -/
-structure SavedTerm where
-  ctx : Elab.ContextInfo
-  lctx : LocalContext
-  expr : Expr
-
-/-- A retained elaboration snapshot, owned by Lean's native RPC session. -/
-structure Snapshot where
-  references : Array SavedTerm
-  deriving TypeName
-
-/-- Plain display data and its opaque semantic owner travel separately. -/
+/-- Iris metadata and native tagged terms travel separately. The infoview RPC client
+registers references inside `codes`; the browser preserves these exact objects. -/
 structure SnapshotReply where
   display : String
-  snapshot : WithRpcRef Snapshot
+  codes : Array CodeWithInfos
   deriving RpcEncodable
 
-abbrev ProjectionM := StateT (Array SavedTerm) MetaM
-
-private partial def retainCode (code : CodeWithInfos) :
-    ProjectionM (TaggedText Nat) := do
-  match code with
-  | .text text => return .text text
-  | .append children => return .append (← children.mapM retainCode)
-  | .tag tag body =>
-    let info := tag.info.val
-    let term? := match info.info with
-      | .ofTermInfo term => some term
-      | .ofDelabTermInfo term => some term.toTermInfo
-      | _ => none
-    match term? with
-    | some term =>
-      let index ← modifyGet fun refs =>
-        (refs.size, refs.push { ctx := info.ctx, lctx := term.lctx, expr := term.expr })
-      return .tag index (← retainCode body)
-    | none => retainCode body
+abbrev ProjectionM := StateT (Array CodeWithInfos) MetaM
 
 private def renderedIProp (id summary : String) (expr : Expr) : ProjectionM RenderedTerm := do
   let code ← ppExprTagged expr delabIProp
@@ -78,7 +50,7 @@ private def renderedIProp (id summary : String) (expr : Expr) : ProjectionM Rend
     text := toString code.stripTags
     typeText := toString typeText
     summary
-    code := ← retainCode code
+    codeIndex := ← modifyGet fun codes => (codes.size, codes.push code)
   }
 
 private partial def displayHypotheses
@@ -145,37 +117,15 @@ provenance explicit: every `DisplayGoal` accepted by the widget originates in
 `Iris.ProofMode.parseIrisGoal?`, never in delaborated infoview text.
 -/
 private def displayIrisGoalAt?
-    (goal : InteractiveGoal) (index : Nat) (refs : Array SavedTerm) :
-    IO (Option DisplayGoal × Array SavedTerm) :=
+    (goal : InteractiveGoal) (index : Nat) (codes : Array CodeWithInfos) :
+    IO (Option DisplayGoal × Array CodeWithInfos) :=
   goal.ctx.val.runMetaM {} do
     goal.mvarId.withContext do
       let target ← instantiateMVars (← goal.mvarId.getType)
       let some irisGoal := parseIrisGoal? target
-        | return (none, refs)
-      let (display, refs) ← (toDisplayGoal irisGoal goal.mvarId index goal.userName?).run refs
-      return (some display, refs)
-
-/-- Inspect the actual expression under its saved binder and metavariable context. -/
-def inspectSavedTerm (term : SavedTerm) : IO String :=
-  term.ctx.runMetaM term.lctx do
-    let expr ← instantiateMVars term.expr
-    let type ← instantiateMVars (← inferType expr)
-    return s!"{← ppExpr expr} : {← ppExpr type}"
-
-structure InspectRequest where
-  snapshot : WithRpcRef Snapshot
-  reference : Nat
-  deriving RpcEncodable
-
-@[server_rpc_method]
-def inspect (params : InspectRequest) : RequestM (RequestTask String) :=
-  RequestM.asTask do
-    RequestM.checkCancelled
-    let some term := params.snapshot.val.references[params.reference]?
-      | throw (RequestError.invalidParams "No such expression in this Iris snapshot")
-    let result ← inspectSavedTerm term
-    RequestM.checkCancelled
-    return result
+        | return (none, codes)
+      let (display, codes) ← (toDisplayGoal irisGoal goal.mvarId index goal.userName?).run codes
+      return (some display, codes)
 
 /-- Return typed Iris proof-mode state for the goals at the requested cursor. -/
 @[server_rpc_method]
@@ -187,19 +137,19 @@ def state (params : StateRequest) : RequestM (RequestTask SnapshotReply) := do
   RequestM.mapRequestTaskCostly goalsTask fun goals? => do
     RequestM.checkCancelled
     let mut displayGoals := #[]
-    let mut references := #[]
+    let mut codes := #[]
     if let some goals := goals? then
       for (goal, index) in goals.goals.zipIdx do
         -- Cancellation is cooperative: do not start another goal after retirement.
         RequestM.checkCancelled
-        let (displayGoal?, refs) ← displayIrisGoalAt? goal index references
-        references := refs
+        let (displayGoal?, nextCodes) ← displayIrisGoalAt? goal index codes
+        codes := nextCodes
         if let some displayGoal := displayGoal? then
           displayGoals := displayGoals.push displayGoal
     RequestM.checkCancelled
     return {
       display := (toJson ({ goals := displayGoals } : WidgetState)).compress
-      snapshot := ← WithRpcRef.mk { references }
+      codes
     }
 
 end Iris.ProofMode.Widget

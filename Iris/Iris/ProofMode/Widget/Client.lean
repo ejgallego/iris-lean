@@ -27,13 +27,13 @@ open Lean.Vir
 open Lean.Vir.Infoview
 open Lean.Vir.React
 
-/-- A native response object, including a reference registered by the infoview client. -/
+/-- Native response containing tagged-code objects registered by the infoview client. -/
 opaque Reply : Type
 
-/-- Exact session and snapshot identity; the flag retires all snapshot interactions. -/
+/-- Native tagged-code array and its request lifetime; presentation keys never identify terms. -/
 structure Context where
-  session : Js RpcSession
-  snapshot : Js.Any
+  codes : Js.Any
+  requestEpoch : Nat
   active : RuntimeRef Bool
   epoch : Nat
   enabled : Bool := true
@@ -148,56 +148,6 @@ private def errorText (error : Js.Any) : RuntimeM (Js String) := do
 private def failureText (label : String) (error : Js.Any) : RuntimeM (Js String) := do
   Js.String.concat (← JsValue.ofString (label ++ ": ")) (← errorText error)
 
-/-- Send a snapshot-relative index with the exact native reference, never its JSON copy. -/
-def inspect (context : Context) (reference : Nat) (options : Js ClientRequestOptions) :
-    RuntimeM (Js.Promise String) := do
-  let params ← Js.Object.empty
-  Js.Object.set params (← JsValue.ofString "snapshot") context.snapshot
-  Js.Object.set params (← JsValue.ofString "reference") (← JsValue.ofFloat reference.toFloat)
-  RpcSession.callWithOptions context.session (← JsValue.ofString "Iris.ProofMode.Widget.inspect")
-    (Js.erase params) options
-
-private inductive InspectionResult where
-  | text (value : Js String)
-  | failed (error : Js.Any)
-
-/-- Renderer-facing inspection state. Semantic indices never pass through strings. -/
-structure Inspection where
-  selected : Option Nat
-  detail : Js String
-  select : Nat → RuntimeM Unit
-  close : RuntimeM Unit
-
-/-- One effect per selection, retired on reselection or unmount. The enclosing
-    snapshot has its own lifetime, checked before applying either RPC outcome. -/
-def useInspection (context : Context) : ReactM Inspection := do
-  let selected ← useState (none : Option Nat)
-  let detail ← useState (.text (← JsValue.ofString "") : InspectionResult)
-  useEffect
-    (do
-      let lease ← RequestLease.create
-      if let some reference := selected.value then
-        detail.set (.text (← JsValue.ofString "Inspecting…"))
-        if context.enabled && (← context.active.get) then
-          let pending ← inspect context reference (← lease.options)
-          observe lease.active pending (fun value => do if ← context.active.get then detail.set (.text value))
-            (fun error => do if ← context.active.get then detail.set (.failed error))
-      else
-        detail.set (.text (← JsValue.ofString ""))
-      LeanRef.toJSL lease)
-    retire #[Js.erase selected.dependency, Js.erase (← JsValue.ofBool context.enabled)]
-  let text ← match detail.value with
-    | .text value => pure value
-    | .failed error => failureText "Inspection unavailable" error
-  return {
-    selected := selected.value
-    detail := text
-    select := fun reference => do
-      if context.enabled && (← context.active.get) && selected.value != some reference then
-        selected.set (some reference)
-    close := selected.set none
-  }
-
 private def request (session : Js RpcSession) (position : Js PanelPosition) (options : Js ClientRequestOptions) :
     RuntimeM (Js.Promise Reply) := do
   let params ← Js.Object.empty
@@ -281,6 +231,10 @@ def application (view : Component ViewProps) : RuntimeM (FunctionComponent Panel
     useClientNotificationEffect (← JsValue.ofString "textDocument/didChange") changed
       (← Js.UndefinedOr.undefined)
     let state ← useState ({} : LoadState)
+    -- Retire native children in the render that observes changed input, before effect cleanup.
+    let requestEpoch ← LeanRef.fromJSL (← Hooks.useMemo
+      (← Js.Function.ofLean0 do LeanRef.toJSL (← fresh))
+      (← mkDependencyList #[Js.erase input, Js.erase session, Js.erase revisionValue]))
     useEffect
       (do
         let lease ← RequestLease.create
@@ -296,8 +250,8 @@ def application (view : Component ViewProps) : RuntimeM (FunctionComponent Panel
               if payload.version != widgetStateVersion then
                 pure { state.value with pending := false, error := some (.invalid "Unsupported Iris widget snapshot version") }
               else do
-                let snapshot ← Js.Object.get reply (← JsValue.ofString "snapshot")
-                let context := { session, snapshot, active := lease.active, epoch := ← fresh : Context }
+                let codes ← Js.Object.get reply (← JsValue.ofString "codes")
+                let context := { codes, requestEpoch, active := lease.active, epoch := ← fresh : Context }
                 let keys ← presentationKeys state.value.loaded scope payload.goals fresh
                 pure { pending := false, loaded := some { state := payload, scope, context, keys } }
           state.set result)
@@ -306,7 +260,8 @@ def application (view : Component ViewProps) : RuntimeM (FunctionComponent Panel
       retire #[Js.erase input, Js.erase session, Js.erase revisionValue]
     let mut children := #[]
     if let some loaded := state.value.loaded then
-      let enabled := !state.value.pending && state.value.error.isNone && (← loaded.context.active.get)
+      let enabled := loaded.context.requestEpoch == requestEpoch &&
+        !state.value.pending && state.value.error.isNone && (← loaded.context.active.get)
       children := children.push (← Component.render view {
         loaded with context := { loaded.context with enabled } } (some (← JsValue.ofString "goals")))
     -- Routine refresh uses aria-busy only: no extra line or live announcement per keystroke.

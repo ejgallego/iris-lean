@@ -1,47 +1,19 @@
 // Demo controls only. The proof UI below is the production Lean-authored VIR widget.
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-import { RpcSessions, Widget_getWidgets } from "@leanprover/infoview-api";
-import VirInfoviewWidget from "../Iris/.lake/packages/lean_vir/web/app/vir-infoview-widget.js";
+import { createHost } from "./widget-infoview-host.mjs";
 
 const h = React.createElement;
-const post = async (path, body) => {
-  const response = await fetch(path, { method: "POST", body: JSON.stringify(body) });
-  const value = await response.json();
-  if (value.error) throw value.error;
-  return value.result;
-};
-const errorText = error => error?.message ?? String(error);
 const config = await (await fetch("/config")).json();
-let nextId = 0;
-const openSessions = new Set();
-const notify = (path, body) => { void post(path, body).catch(console.error); };
-const sessions = new RpcSessions({
-  async createRpcSession() {
-    const { sessionId } = await post("/connect", {});
-    openSessions.add(sessionId); return sessionId;
-  },
-  closeRpcSession(sessionId) { openSessions.delete(sessionId); notify("/close", { sessionId }); },
-  release(params) { notify("/release", params); },
-  async call(params, options) {
-    const id = `demo-${crypto.randomUUID()}-${++nextId}`;
-    const cancel = () => notify("/cancel", { id });
-    options?.abortSignal?.addEventListener("abort", cancel, { once: true });
-    if (options?.abortSignal?.aborted) cancel();
-    try { return await post("/call", { id, params }); }
-    finally { options?.abortSignal?.removeEventListener("abort", cancel); }
-  },
-});
-const sessionAt = position => sessions.connect({ textDocument: { uri: config.uri }, position }, config.capabilities);
 const positions = [
-  ["heapStore", "Heap · 1. Before store", "Write v' to l, then read it back. Hl owns the cell being updated; Hframe owns a second cell that must survive unchanged. Inspect l, E, or the bound return value r."],
+  ["heapStore", "Heap · 1. Before store", "Write v' to l, then read it back. Hl owns the cell being updated; Hframe owns a second cell that must survive unchanged. Hover over l, E, or the bound return value r."],
   ["heapLoad", "Heap · 2. After store", "wp_store changed Hl from l ↦ some v to l ↦ some v'. Hframe still owns l' ↦ some w. The remaining program reads l."],
   ["heapPost", "Heap · 3. After load", "The read returned v'. The target now asserts that result and ownership of both cells. iframe and itrivial finish the proof."],
   ["spinOpen", "SpinLock · 1. Open invariant", "Inside release_spec: Hinv is persistent. Hpt owns the lock cell, Hcond records its old state, and Hl/HR supply the ghost token and protected resource. The target stores false under a reduced mask."],
   ["spinStored", "SpinLock · 2. After store", "Hpt now owns the unlocked cell. The target restores the invariant and mask before returning to the caller's continuation; Hl and HR are needed to close the invariant."],
   ["contexts", "Contexts", "Two persistent resources, two spatial resources, and the target."],
-  ["split", "Split goals", "Expand the second goal. Inspect the shared P in each goal independently."],
-  ["binders", "Nested binders", "Inspect n and m before introduction; their types come from saved binder contexts."],
+  ["split", "Split goals", "Expand the second goal. Hover over the shared P in each goal independently."],
+  ["binders", "Nested binders", "Hover over n and m before introduction; their types come from saved binder contexts."],
   ["ordinary", "Ordinary Lean", "Outside Iris proof mode, the Iris widget renders nothing."],
 ];
 const themeVariables = {
@@ -81,40 +53,34 @@ function Demo() {
   const [theme, setTheme] = React.useState("light");
   const [fontSize, setFontSize] = React.useState(16);
   const [width, setWidth] = React.useState(420);
-  const [loaded, setLoaded] = React.useState(null);
+  const hostRef = React.useRef(null);
+  const mountRef = React.useRef(null);
   const [error, setError] = React.useState(null);
   const sourceRef = React.useRef(null);
   const position = config[selected];
-  const session = sessionAt(position);
-  globalThis.irisSession = session;
+
   React.useEffect(() => {
     for (const [name, value] of Object.entries(themeVariables[theme]))
       document.documentElement.style.setProperty(`--vscode-${name}`, value);
     document.documentElement.style.setProperty("--vscode-editor-font-size", `${fontSize}px`);
   }, [theme, fontSize]);
   React.useEffect(() => {
-    let active = true;
-    setError(null);
-    Widget_getWidgets(session, position).then(result => {
-      if (!active) return;
-      const props = result.widgets.find(widget => widget.props.irPackage?.entry === "Iris.ProofMode.Widget.createComponent")?.props;
-      if (!props) throw new Error("The Lean server did not return the Iris widget.");
-      setLoaded({ selected, props });
-    }).catch(error => { if (active) setError(errorText(error)); });
-    return () => { active = false; };
-  }, [selected, session, position]);
+    const pending = createHost(mountRef.current, config);
+    hostRef.current = pending;
+    pending.catch(error => setError(error.message ?? String(error)));
+    return () => { void pending.then(host => host.close()); };
+  }, []);
+  React.useEffect(() => {
+    void hostRef.current.then(host => host.move(position)).catch(error => setError(error.message ?? String(error)));
+  }, [position]);
   React.useEffect(() => {
     const pre = sourceRef.current, line = pre?.querySelector(".current");
     if (line) pre.scrollTop = line.offsetTop - pre.clientHeight / 2;
   }, [selected]);
-  // Memoized props keep purely visual demo controls from resetting the proof snapshot.
-  const panel = React.useMemo(() => loaded?.selected === selected ? h(VirInfoviewWidget, {
-    ...loaded.props, pos: { uri: config.uri, ...position },
-  }) : null, [loaded, selected, position]);
   const [, label, description] = positions.find(([key]) => key === selected);
   return h("main", null,
     h("h1", null, "Iris proof mode"),
-    h("p", { className: "intro" }, "Live Lean goals. Select an underlined term, or focus it and press Enter, to inspect its expression and type."),
+    h("p", { className: "intro" }, "Live Lean goals beside the normal Tactic state. Hover over a term for its native type information; Ctrl/Cmd-click a constant for navigation."),
     h("div", { className: "toolbar" },
       h("label", null, "Proof position", h("select", { value: selected, onChange: event => setSelected(event.target.value) },
         positions.map(([value, label]) => h("option", { key: value, value }, label)))),
@@ -126,18 +92,15 @@ function Demo() {
       h("section", { "aria-label": "Live widget" },
         h("h2", null, label),
         h("div", { className: "preview", style: { "--preview-width": `${width}px` } },
-          error ? h("p", { role: "alert" }, error) : panel ?? h("p", { role: "status" }, "Loading proof position…"),
-          selected === "ordinary" && panel && h("p", { className: "empty" }, "This is an ordinary Lean goal. The Iris panel is intentionally empty.")),
+          error && h("p", { role: "alert" }, error),
+          h("div", { ref: mountRef }),
+          selected === "ordinary" && h("p", { className: "empty" }, "This is an ordinary Lean goal. The Iris panel is intentionally empty.")),
         h("p", { className: "hint" }, description)),
       h("section", { className: "source", "aria-label": "Lean source" },
         h("h2", null, `WidgetDemo.lean · line ${position.line + 1}`),
         h("pre", { ref: sourceRef }, h("code", null, config.source.split("\n").map((line, index) =>
           h("span", { key: index, className: `line${index === position.line ? " current" : ""}` },
             h("span", { className: "number", "aria-hidden": true }, index + 1), line || " ")))))),
-    h("p", { className: "hint" }, "The proof panel is authored in Lean and runs through VIR. This browser harness provides position and display controls; it does not emulate the full VS Code infoview."));
+    h("p", { className: "hint" }, "The proof panel is authored in Lean and runs through VIR. This browser harness uses the real upstream infoview providers. Its navigation callback records a destination; opening that file is part of the VS Code check."));
 }
-createRoot(document.getElementById("app")).render(h(React.StrictMode, null, h(Demo)));
-addEventListener("pagehide", () => {
-  for (const sessionId of openSessions) navigator.sendBeacon("/close", JSON.stringify({ sessionId }));
-  sessions.dispose();
-});
+createRoot(document.getElementById("app")).render(h(Demo));

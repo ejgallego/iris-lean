@@ -152,33 +152,6 @@ public def interactiveTerm : Entry := style #[
   ("minWidth", "0")
 ]
 
-public def termButton (target : Bool) : Entry := style #[
-  ("minWidth", "0"),
-  ("padding", "0"),
-  ("border", "0"),
-  ("borderBottom", "1px dotted " ++ muted),
-  ("background", "transparent"),
-  ("color", if target then targetAccent else foreground),
-  ("fontFamily", editorFont),
-  ("fontSize", editorSize),
-  ("fontWeight", "400"),
-  ("lineHeight", "1.3"),
-  ("textAlign", "left"),
-  ("whiteSpace", "pre-wrap"),
-  ("overflowWrap", "anywhere"),
-  ("cursor", "pointer")
-]
-
-public def termDetails : Entry := style #[
-  ("minWidth", "0"),
-  ("color", muted),
-  ("fontFamily", editorFont),
-  ("fontSize", editorSize),
-  ("lineHeight", "1.25"),
-  ("whiteSpace", "pre-wrap"),
-  ("overflowWrap", "anywhere")
-]
-
 public def termCode (target : Bool) : Entry := style #[
   ("minWidth", "0"),
   ("fontFamily", editorFont),

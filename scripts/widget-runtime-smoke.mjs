@@ -30,6 +30,7 @@ const runtime = await createVirRuntime({
     // SSR evaluates the hook but must never schedule its RPC effect.
     infoviewUseRpcSession: () => ({ call() { throw new Error("SSR must not run an RPC effect"); } }),
     infoviewUseClientNotificationEffect: () => {},
+    infoviewInteractiveCode: () => { throw new Error("SSR loading must not render a term"); },
   }),
 });
 
