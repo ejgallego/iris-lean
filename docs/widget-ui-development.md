@@ -1,6 +1,16 @@
 # Developing the Iris widget UI
 
-## What this pass fixes
+## Current prototype decision (Round A)
+
+Native `InteractiveCode` terms now replace leaf buttons and the inline inspector.
+The widget stays beside Tactic state. The real HeapLang/SpinLock corpus and the
+native comparison are implemented; presentation continuity is retained. See the
+[current runbook](vir-demo-runbook.md), [coverage](widget-testing-surface.md) and
+[resource-change design proposal](widget-resource-changes.md). Enclosing-subterm
+selection and native term keyboard policy remain gaps. The sections below record
+the earlier development plan and its continuity correction.
+
+## What the earlier pass fixed
 
 The review follow-up preserves native RPC errors through React state and formats
 checked message/code fields at display time. Server errors, native JavaScript

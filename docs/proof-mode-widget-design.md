@@ -1,9 +1,9 @@
 # Iris Proof-Mode Widget Design
 
-- Status: opt-in native-RPC/subterm prototype implemented; basic editor use confirmed, broader acceptance pending
+- Status: native-term companion prototype; Round A browser checks, first real VS Code check pending
 - Task id: `proof-mode-widget`
 - Branch: `feat/proof-mode-widget`
-- Date: 2026-09-03
+- Updated: 2026-11-04 (earlier design history retained)
 
 Contributor entry point: [maintainer guide](widget-maintainer-guide.md).
 Pinned-dependency findings: [VIR API review](vir-widget-api-review.md).
@@ -24,12 +24,13 @@ Only proposition leaves are pretty-printed, after their structural role is
 already known. The Lean-authored VIR component decodes that model and renders
 it with React.
 
-Version 3 preserves Lean's tagged proposition rendering. Keyboard-focusable
-subterm controls inspect actual expressions under their saved binder and
-metavariable contexts. A native server snapshot reference owns that context;
-display IDs are not semantic references. Inspection remains read-only and
-click/Enter activated, with an inline expression/type result—not full infoview
-hover popups, definition navigation, or mathematical typesetting.
+Version 4 preserves native `CodeWithInfos` objects from RPC through VIR to
+upstream `InteractiveCode`. Hover and definition navigation use the saved
+contexts; per-leaf buttons and the inline inspector are retired. Collapse
+survives cursor moves/edits, while stale terms become plain text until refresh
+completes. See the [Round A contract](#approved-demo-prototype-native-terms-beside-tactic-state).
+The detailed implementation narrative below records earlier iterations where
+explicitly superseded by that contract and the current maintainer guide.
 
 The opt-in prototype now targets Lean 4.35.0 and pins VIR's last mainline
 4.35 commit `81de859a3ba1cb5da8bc5f128af025dd5a40b343`. The
@@ -54,9 +55,7 @@ its proof-mode state into a flat goal display:
 This repository's `Display.lean` output is the comparison baseline for notation
 and resource conventions. The `∗` hypothesis prefix is already an iris-lean
 convention. Rocq Iris's `────□` / `────∗` separator layout is optional design
-inspiration, not a convention this widget must restore. The current widget's
-missing `:` between hypothesis name and proposition remains a notation gap;
-the comparison should preserve that distinction from the choice of layout.
+inspiration, not a convention this widget must restore. The widget uses the same `: ` separator between hypothesis name and proposition.
 
 The information is correct, but the two contexts remain one visual block. As
 the number and size of resources grows, users must repeatedly scan the leading
@@ -69,7 +68,7 @@ Relevant sources:
 - [`Iris/IrisTest/Display.lean`](../Iris/IrisTest/Display.lean)
 - [`Iris/proofmode.md`](../Iris/proofmode.md)
 
-### Replacement remains undecided
+### Companion view is the approved prototype
 
 The normal infoview also shows the ordinary Lean context above this Iris
 judgment: variables, ordinary hypotheses, local definitions and instances.
@@ -83,8 +82,8 @@ context presentation. A proposal must account for the ordinary Lean context,
 either through the target model or host-provided typed goal/context data, and
 compare the complete view on the same proof states. The native target-only
 experiment establishes neither this coverage nor replacement readiness. The
-maintainer has not chosen replacement or coexistence; no context-model or
-renderer change is implied by this requirement.
+maintainer has chosen coexistence for this prototype. Replacement and a complete
+ordinary-context model are out of scope.
 
 ### Problem statement
 
@@ -140,8 +139,8 @@ typed server goal to its own display domain before the browser boundary.
 - Replacing or hiding Lean's built-in goal display.
 - Tactic suggestions, tactic insertion, drag-and-drop, or proof-state mutation.
 - Parsing canonical display text or arbitrary user syntax.
-- Subexpression hover popups, click-to-highlight, jump-to-definition, or
-  selected-expression integration.
+- Enclosing-subterm selection and selected-expression integration. Native hover
+  and definition navigation are now part of the prototype.
 - Persisting UI preferences across editor sessions.
 - A generic separation-logic widget framework.
 
@@ -152,9 +151,10 @@ typed server goal to its own display domain before the browser boundary.
 - Non-Iris goals do not produce partial or guessed contexts.
 - The target remains readable at a 280 px panel width without page-level
   horizontal scrolling.
-- All controls are keyboard reachable and expose accessible names and state.
-- Selecting a tagged subterm reveals its expression and type in the saved
-  elaboration context without mutating the proof.
+- Collapse controls expose accessible names/state and keyboard activation;
+  a full native-term keyboard policy remains deferred.
+- Native hover reveals contextual term information without mutating the proof;
+  definition navigation reaches the editor API.
 - Multiple goal cards have stable keys and independent collapse state.
 - The custom RPC payload round-trips through JSON and mounts in the VIR browser
   runtime.
@@ -193,7 +193,7 @@ For multiple Iris goals, the region contains one keyed goal card per goal. The
 first card starts expanded; later cards start collapsed. Each card owns its
 collapse state.
 
-## 7. Target display domain
+## 7. Earlier target display domain (superseded by Round A)
 
 The RPC and browser share a deliberately small, JSON-serializable model:
 
@@ -610,3 +610,35 @@ Neither changes the production Lean widget, wire version, or VIR pin.
 
 Staging the runtime deterministically and completing manual editor acceptance
 remain rollout work rather than changes to the interaction model.
+
+
+## Approved demo prototype: native terms beside Tactic state
+
+Round A keeps the widget beside the ordinary goal display. `DisplayGoal` remains
+an Iris projection; Lean locals continue to be shown by Tactic state. Every
+hypothesis proposition and target uses upstream `InteractiveCode` through VIR's
+native wrapper, preserving the exact registered JavaScript `CodeWithInfos`
+object. The per-leaf buttons and inline inspector are retired. The shared wire
+version is 4: metadata is deliberately a JSON string for Lean's display-domain
+decoder; tagged code and RPC references never pass through that JSON conversion.
+The hypothesis separator follows `Iris.ProofMode.Display`: `∗Hl : proposition`.
+
+Presentation still belongs to the document in this mounted panel. During a
+refresh, existing cards/collapse remain while native terms are replaced by their
+canonical plain text, removing stale popup/navigation handlers. A fresh reply
+mounts fresh native term children. Errors retain readable inactive goals;
+confirmed non-Iris states remove the view. The infoview RPC client registers and
+owns references nested in the native code objects; eventual release follows its
+object lifetime/GC mechanism, not a manual release from the Iris renderer.
+Long-session memory/release timing has not been measured.
+
+Native hover and definition navigation are supported. Enclosing-subterm
+selection and a complete keyboard policy remain explicit gaps. No proposition
+path is mapped onto the enclosing Lean goal: those are different roots.
+The [resource-change proposal](widget-resource-changes.md) is design only and
+requires a separate decision. Packaging placement, document cleanup and
+replacement of the ordinary goal view remain outside this implementation.
+
+The package entrypoint meta-imports the view because package capture consumes
+its runtime IR at elaboration time. This makes implementation-only UI changes
+invalidate the captured package through Lake's normal dependency tracking.

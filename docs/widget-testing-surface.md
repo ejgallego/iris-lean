@@ -1,11 +1,77 @@
 # Widget testing and use-case surface
 
-Current local checkpoint: Lean 4.35 / VIR `81de859a`; lifecycle fixes at
-`278633ae`, followed by the interactive browser demo. The live demo is served by
+Current prototype: Lean 4.35 / VIR `81de859a`, with native `InteractiveCode`
+terms beside the normal Tactic state. The pre-migration experiments below are
+historical evidence, not claims about the current renderer. The live demo is served by
 `node scripts/widget-browser-smoke.mjs --demo`; see the
 [runbook](vir-demo-runbook.md).
 
-## Coverage map
+## Round A acceptance (2026-11-04)
+
+Production now sends native `CodeWithInfos` objects separately from the version-4
+metadata JSON. Each hypothesis proposition and the target uses upstream
+`InteractiveCode`; custom per-leaf buttons and the inline inspector are gone.
+The normal Tactic state remains visible. The browser/demo hosts now use actual
+upstream infoview providers, with bundled widget-source substitution and an
+editor API bridge. The first installed-VS-Code check remains with the maintainer.
+
+The final light/360px/14px, dark/320px/22px with 500 ms package delay, and
+high-contrast/280px/28px runs pass (421 host RPC calls each, including injected
+failures and ordinary infoview activity). They check canonical terms, the `: `
+separator, hover for `P`, `n`/`m`, `l`/`E`/`r`, and `γ`/`b`; actual browser
+Ctrl-click on `some` reaches `EditorApi.showDocument` for `Init/Prelude.lean`.
+The large-font navigation test targets the first text fragment of a wrapped tag.
+
+Continuity cases retain card DOM, collapse and collapse-control focus across
+cursor moves, same-position edits, typing with a moving cursor, goal-ID churn,
+and a surviving goal changing ordinal. Held replies leave old canonical text
+visible, add no Iris-panel height/status announcement, and leave no native
+semantic handlers. A held native popup is cancelled on snapshot retirement;
+late snapshot successes/failures and unmount cannot replace current content.
+Refresh failure/recovery, non-Iris empty results, malformed replies, readable
+RPC/package errors and server-observed cancellation remain covered. One expected
+console error comes from the deliberately invalid package fingerprint; its UI
+message/code are checked. No unhandled error or React key warning was observed.
+
+| Live state | Native hover spans, whole Iris panel | Term buttons |
+| --- | ---: | ---: |
+| Heap before store | 29 | 0 |
+| Heap after store | 27 | 0 |
+| Heap postcondition | 22 | 0 |
+| SpinLock invariant open | 74 | 0 |
+| SpinLock after store | 65 | 0 |
+
+These are structural counts, not performance measurements. Each Iris panel
+passes its own horizontal-overflow check. The standard Tactic state can still
+overflow the very narrow 280px viewport at 28px font; this run does not certify
+page-wide layout or full editor accessibility. Enclosing-subterm selection and
+a complete native-term keyboard policy remain explicit gaps. Collapse still
+works through real Enter key events. No fabricated goal/subterm path is used.
+
+The comparison rerun asserted exact object identity for 388 native component
+invocations and collected 86 target observations; it used the native production
+renderer before the separator/import follow-up. Historical leaf-button timings
+below must not be presented as current performance. The demo host passes all
+nine proof selectors; screenshots of the normal view beside the native widget
+were inspected. The final Lake build, `lake test` and runtime smoke pass (34
+package members); one pre-existing redundant-`private` warning remains.
+
+Visual inspection caught an implementation-dependency issue: ordinary imports
+only track public interfaces, while `vir_proof_widget` captures runtime IR during
+elaboration. The entrypoint now also meta-imports `View`. A controlled
+implementation-only separator change preserved `View.olean`, changed `View.ir`,
+and rebuilt `Widget.olean`; restoring the source restored all three exact hashes.
+This needs upstream documentation/API guidance, not a cache purge.
+
+Local evidence is retained in `.tmp/round-a/`: `light-v4`, `dark-v4` and
+`contrast-v4` JSON/log/PNG files, `native-comparison.json`, `demo.json`/`demo.png`,
+`import-dependency.json` with variant/restoration logs, and Lake build/test logs.
+Earlier failing probes are retained. The downstream fixture was rerun against
+this code in `.tmp/widget-downstream-nYFncg/result.json`: registration/state/package
+pass; missing runtime installation and the matching donor control behave as
+recorded below. Packaging placement is unchanged.
+
+## Pre-migration coverage map (historical)
 
 | Layer | What is exercised | Limit |
 | --- | --- | --- |
@@ -46,16 +112,16 @@ establish live Iris semantics or widget acceptance.
 3. **Scale and syntax:** large spatial/persistent contexts, long induction
    hypotheses, mixed ordinary/Iris goals, Unicode, and user-defined notation.
 4. **Editor lifetime:** real VS Code server restart, expired references, multiple
-   files/panels, and focus/scroll behavior across edits. The current browser
-   adapter substitutes the editor context; it does not establish these behaviors.
+   files/panels, and focus/scroll behavior across edits. The current browser host uses actual upstream providers with an editor API bridge;
+   it does not establish these behaviors in the installed VS Code extension.
 5. **Accessibility and performance:** complete keyboard traversal, a screen
    reader, actual VS Code themes/zoom, measured latency and long-session memory.
 
-Native infoview hover/navigation has an experimental comparison below; it is
-not enabled in the production renderer. Mathematical presentation remains
-design work.
+Native infoview hover/navigation is now the production term renderer.
+The earlier experiment below records the evidence used for that decision.
+Mathematical presentation and resource-change rendering remain design work.
 
-## Automation status
+## Historical automation status before native migration
 
 The recorded widget build, `lake test`, runtime smoke and browser matrix passed
 locally. The new demo path was also exercised against its running server and the
@@ -108,8 +174,8 @@ small `P Q R S` examples.
 Lean wrapper around VIR's `Infoview.interactiveCode`. A test RPC prints the
 same typed Iris target as native `CodeWithInfos`. The browser passes that
 registered JavaScript object through the Lean wrapper unchanged; identity is
-asserted at the host `createElement` boundary. Production still uses the
-existing renderer. This is evidence for a design review, not a renderer choice.
+asserted at the host `createElement` boundary. At that checkpoint production still used the
+leaf-button renderer. The maintainer subsequently approved native terms.
 
 The comparison uses the real upstream `renderInfoview` and its RPC providers.
 Widget discovery/source are host shims; state, goal, native tag and popup RPCs
@@ -177,8 +243,7 @@ renders Tactic state unconditionally, then the panel widgets. The
 [panel props](https://github.com/leanprover/vscode-lean4/blob/66528403779d277160f1e9b9ee54de1ac24b8fec/lean4-infoview/src/infoview/userWidget.tsx)
 have no supported hide/replace callback. `expectedTypeVisibility` controls
 Expected type only. Users can manually collapse Tactic state; automatic
-replacement would require host/upstream support. Replacement versus coexistence
-is still a maintainer decision.
+replacement would require host/upstream support. The maintainer has chosen coexistence for this prototype; replacement is out of scope.
 
 There is also a content-coverage gap: `DisplayGoal` does not carry the ordinary
 Lean context shown above the Iris judgment (for example `hlc`, `GF`, `s`, `E`,
@@ -234,7 +299,7 @@ do not import the widget fetch it during dependency resolution. A second
 placement, a consumer-aware runtime installation mechanism, and documentation
 distribution remain design decisions; this fixture changes none of them.
 
-## Continuity correction after review
+## Continuity correction before native migration
 
 The first continuity implementation scoped presentation to the position-specific
 RPC session. The reviewer was right: a real cursor move kept the same goal IDs
