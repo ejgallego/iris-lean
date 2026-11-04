@@ -377,6 +377,71 @@ async function run() {
     await mount(config.ordinary);
     await waitFor("empty outside Iris", () => container.querySelector('[data-vir-infoview-state="ready"]') &&
       !container.textContent.includes("Loading") && !container.querySelector("[data-iris-proof-mode-widget]"));
+
+    // Real HeapLang program: store, load, then discharge the framed postcondition.
+    // Compare the UI to typed snapshots and check the resource change independently.
+    for (const [position, storedValue, hasWp] of [
+      [config.heapStore, "v", true], [config.heapLoad, "v'", true], [config.heapPost, "v'", false],
+    ]) {
+      await mount(position);
+      const snapshot = await sessionAt(position).call(prefix + "state", { pos: position });
+      const { goals } = JSON.parse(snapshot.display);
+      check(goals.length === 1 && goals[0].persistent.length === 0, "one spatial HeapLang goal");
+      const goal = goals[0], resources = new Map(goal.spatial.map(h => [h.name, h.proposition.text]));
+      check(resources.size === 2 && resources.get("Hl") === `l ↦ some ${storedValue}` &&
+        resources.get("Hframe") === "l' ↦ some w", "store updates exactly its owned cell");
+      check(goal.target.text.startsWith("WP ") === hasWp, "load reaches the postcondition");
+      if (!hasWp) check(goal.target.text.includes("⌜v' = v'⌝"), "read returns the stored value");
+      await waitFor("canonical HeapLang target", () =>
+        target()?.querySelector("[data-term-id]")?.textContent === goal.target.text);
+      for (const hypothesis of goal.spatial) {
+        const rendered = [...container.querySelectorAll('section[aria-label="Spatial"] [data-term-id]')]
+          .find(node => node.dataset.termId === hypothesis.proposition.id);
+        check(rendered?.textContent === hypothesis.proposition.text,
+          "rendered spatial resource matches the typed snapshot");
+      }
+      check(document.documentElement.scrollWidth <= innerWidth, "HeapLang notation overflows the panel");
+      const inspect = async (name, type) => {
+        await click(button(name));
+        await waitFor(`contextual HeapLang ${name}`, () => detail().includes(`${name} : ${type}`));
+      };
+      await inspect("l", "Loc");
+      if (hasWp) {
+        await inspect("E", "CoPset");
+        await inspect("r", "Val");
+      } else await inspect("v'", "Val");
+    }
+    // Complete SpinLock.release_spec: open invariant, ghost resources, store and restore.
+    for (const [position, stored] of [[config.spinOpen, false], [config.spinStored, true]]) {
+      await mount(position);
+      const snapshot = await sessionAt(position).call(prefix + "state", { pos: position });
+      const { goals } = JSON.parse(snapshot.display);
+      check(goals.length === 1, "one SpinLock goal");
+      const goal = goals[0], spatial = new Map(goal.spatial.map(h => [h.name, h.proposition.text]));
+      check(goal.persistent.length === 1 && goal.persistent[0].name === "Hinv" &&
+        goal.persistent[0].proposition.text.startsWith("inv spinlockN"), "persistent lock invariant");
+      check(spatial.size === 5 && spatial.get("Hl") === "locked γ" && spatial.get("HR") === "R",
+        "ghost token and protected resource survive the store");
+      check(spatial.get("Hpt") === (stored ? "l ↦ some hl_val(#false)" : "▷ l ↦ some hl_val(#b)"),
+        "the atomic store consumes later and updates the lock cell");
+      check(spatial.get("Hcond").startsWith(stored ? "if b" : "▷ if b"), "later is removed from the invariant condition");
+      check(goal.target.text.startsWith(stored ? "|={" : "WP ") && goal.target.text.includes("spinlockN"),
+        "reduced mask and invariant-closing update remain visible");
+      await waitFor("canonical SpinLock target", () =>
+        target()?.querySelector("[data-term-id]")?.textContent === goal.target.text);
+      for (const [label, hypotheses] of [["Persistent", goal.persistent], ["Spatial", goal.spatial]]) {
+        for (const hypothesis of hypotheses) {
+          const rendered = [...container.querySelectorAll(`section[aria-label="${label}"] [data-term-id]`)]
+            .find(node => node.dataset.termId === hypothesis.proposition.id);
+          check(rendered?.textContent === hypothesis.proposition.text, "canonical SpinLock resource");
+        }
+      }
+      check(document.documentElement.scrollWidth <= innerWidth, "SpinLock notation overflows the panel");
+      for (const [name, type] of [["l", "Loc"], ["γ", "GName"], ["b", "Bool"]]) {
+        await click(button(name));
+        await waitFor(`contextual SpinLock ${name}`, () => detail().includes(`${name} : ${type}`));
+      }
+    }
     // A genuine package RPC failure must keep its message through the shell UI.
     await mount(config.contexts, true);
     await until("readable package failure", async () => {
@@ -392,9 +457,10 @@ async function run() {
       "nested binders", "repeated occurrences", "server rejection", "stale selection success/failure", "stale snapshot",
       "goal split", "unique DOM IDs", "shared hypothesis ARIA/close isolation", "late unmount failure",
       "same-position proof edit", "package reuse", "empty outside Iris", "readable package RPC error", "React Strict Mode",
-      "retained goals during refresh", "disabled stale actions", "collapse continuity", "refresh failure/recovery",
-      "cursor move and return", "typing with cursor movement", "goal ID churn", "surviving goal reordered",
+      "retained goals during refresh", "disabled stale actions", "collapse continuity", "refresh failure/recovery", "cursor move and return", "typing with cursor movement", "goal ID churn", "surviving goal reordered",
       "native RPC diagnostics", "snapshot/decoding errors", "server-observed cancellation", "no React key warnings",
+      "HeapLang store/load", "framed ownership preserved", "postcondition binder inspection", "HeapLang narrow layout",
+      "SpinLock invariant/ghost state", "SpinLock store and closing update", "SpinLock contextual inspection/layout",
       ...(config.packageDelayMs > 0 ? ["slow package startup"] : [])] };
   }, [
     ["gates", () => { for (const gate of gates) gate.resolve(); }],

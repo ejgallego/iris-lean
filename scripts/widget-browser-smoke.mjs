@@ -17,8 +17,10 @@ const { launchChromium, openChromiumPage, navigate, evaluate } = await import(ne
 const { finishLeanProcess } = await import(new URL("tests/infoview/rpc-process-test-support.mjs", vir));
 const { withCleanup } = await import(new URL("tests/infoview/rpc-test-support.js", vir));
 const sourcePath = new URL("IrisTest/ProofMode/WidgetDemo.lean", iris);
+const demo = process.argv.includes("--demo");
 // Only this in-memory document sees the server cancellation probe.
-const source = (await readFile(sourcePath, "utf8")).replace("import Iris.ProofMode.Widget\n",
+const originalSource = await readFile(sourcePath, "utf8");
+const source = demo ? originalSource : originalSource.replace("import Iris.ProofMode.Widget\n",
   "import Iris.ProofMode.Widget\npublic meta import IrisTest.ProofMode.WidgetRpc\n");
 const position = marker => {
   const lines = source.split("\n");
@@ -28,10 +30,10 @@ const position = marker => {
   return { line, character: lines[line].search(/\S/) };
 };
 const bundle = await build({
-  entryPoints: [fileURLToPath(new URL("widget-browser-entry.mjs", import.meta.url))],
+  entryPoints: [fileURLToPath(new URL(demo ? "widget-demo-entry.mjs" : "widget-browser-entry.mjs", import.meta.url))],
   nodePaths: [fileURLToPath(new URL("node_modules", vir))],
-  bundle: true, write: false, platform: "browser", format: "iife",
-  define: { "process.env.NODE_ENV": '"development"' },
+  bundle: true, write: false, platform: "browser", format: demo ? "esm" : "iife",
+  define: { "process.env.NODE_ENV": JSON.stringify("development") },
   plugins: [{ name: "vir-source-override", setup(builder) {
     if (process.env.IRIS_VIR_SOURCE_DIR) {
       builder.onResolve({ filter: /\/web\/app\/vir-infoview-widget\.js$/ }, () => ({
@@ -97,6 +99,12 @@ await withCleanup(async () => {
     contexts: position("widget-position-contexts"), split: position("widget-position-split"),
     binders: position("widget-position-binders"),
     ordinary: position("widget-position-ordinary"),
+    heapStore: position("widget-position-heap-store"),
+    heapLoad: position("widget-position-heap-load"),
+    heapPost: position("widget-position-heap-post"),
+    spinOpen: position("widget-position-spin-open"),
+    spinStored: position("widget-position-spin-stored"),
+    ...(demo ? { source } : {}),
   };
   assert.ok(Number.isFinite(config.width) && config.width >= 200);
   assert.ok(Number.isFinite(config.fontSize) && config.fontSize >= 10);
@@ -108,12 +116,17 @@ await withCleanup(async () => {
   assert.ok(Object.hasOwn(themes, config.theme), "unknown test theme");
   server = createServer(async (req, res) => {
     try {
+      const port = server.address().port;
+      if (![ `127.0.0.1:${port}`, `localhost:${port}` ].includes(req.headers.host) ||
+          (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`)) {
+        res.writeHead(403); res.end(); return;
+      }
       if (req.method === "GET") {
         const assets = {
           "/": ["text/html", `<!doctype html><meta charset="utf-8"><style>
-            :root { ${themes[config.theme]}; --vscode-editor-font-size:${config.fontSize}px; }
+            :root { ${themes[config.theme]}; --vscode-editor-font-size:${config.fontSize}px;  }
             body { background:var(--vscode-editor-background); color:var(--vscode-editor-foreground); }
-            </style><div id="app"></div><script src="/test.js"></script>`],
+            </style><div id="app"></div><script ${demo ? 'type="module"' : ""} src="/test.js"></script>`],
           "/test.js": ["text/javascript", bundle.outputFiles[0].contents],
           "/config": ["application/json", JSON.stringify(config)],
         };
@@ -132,6 +145,7 @@ await withCleanup(async () => {
           uri: sourcePath.href, sessionId,
         }), 5000));
       } else if (req.url === "/edit") {
+        if (demo) { res.writeHead(404); res.end(); return; }
         const kind = body.kind ?? "rename";
         assert.ok(["rename", "type", "allocate"].includes(kind));
         let text = kind === "rename" ? currentSource.replaceAll(/\bS\b/g, "T") :
@@ -170,7 +184,21 @@ await withCleanup(async () => {
       res.end(JSON.stringify({ error: { code: error.code, message: error.message } }));
     }
   });
-  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(demo ? Number(process.env.IRIS_WIDGET_PORT ?? 8140) : 0, "127.0.0.1", resolve);
+  });
+  if (demo) {
+    clearTimeout(deadline);
+    console.log(`Iris live widget demo: http://127.0.0.1:${server.address().port}/`);
+    console.log("Ctrl+C stops the demo and its Lean server.");
+    await new Promise(resolve => {
+      process.once("SIGINT", resolve);
+      process.once("SIGTERM", resolve);
+      child.once("exit", resolve);
+    });
+    return;
+  }
   chrome = await launchChromium(); cdp = await openChromiumPage(chrome);
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: config.width, height: 900, deviceScaleFactor: 1, mobile: false });
   await bounded(navigate(cdp, `http://127.0.0.1:${server.address().port}/`));
