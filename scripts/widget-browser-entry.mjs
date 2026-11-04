@@ -87,8 +87,10 @@ async function run() {
     const packageCalls = () => host.calls.filter(c => c.method === "Lean.Vir.Infoview.buildIRPackage").length;
     const startupPackages = packageCalls();
     const snapshot = await host.snapshot(config.contexts), payload = JSON.parse(snapshot.display);
-    check(payload.version === 4 && snapshot.codes.length > 0, "versioned native terms");
+    check(payload.version === 5 && snapshot.codes.length > 0, "versioned native terms");
     check(target().textContent === payload.goals[0].target.text, "canonical native target");
+    check(payload.goals[0].comparison.branches.length === 2, "branching tactic retains both outcomes");
+    check(panel().querySelectorAll('[data-after-goal-id]').length === 2, "both outcomes rendered");
     check(!panel().querySelector('[data-term-ref]'), "retired per-leaf buttons");
     check(!panel().querySelector('section[aria-label="Target"] button'), "no inline inspector");
     check(parseFloat(getComputedStyle(leaf("P")).fontSize) === config.fontSize, "editor font size");
@@ -212,6 +214,21 @@ async function run() {
     await wait("cancellation reached Lean", () => probe.settled);
     check(probe.hasSignal && probe.cancelled && probe.error?.code === -32800, "server must settle RequestCancelled");
 
+    const assertChanges = (goal, expected, tactic) => {
+      const comparison = goal.comparison;
+      check(comparison && comparison.tactic === tactic && !comparison.unavailable && !comparison.closed, `selected tactic comparison for ${tactic}: ${JSON.stringify(comparison)}`);
+      check(comparison.branches.length === 1 && !comparison.branches[0].unavailable, "one sound successor");
+      const changes = comparison.branches[0].resources;
+      check(changes.length === Object.keys(expected).length, "all resources accounted for");
+      for (const [name, status] of Object.entries(expected)) {
+        const change = changes.find(c => c.name === name);
+        check(change?.status === status, `${tactic}: ${name} should be ${status}`);
+        const row = panel().querySelector(`[data-resource-name="${name}"][data-resource-status="${status}"]`);
+        check(row, `${name} status rendered`);
+        if (status === "changed") check(row.textContent.includes("was: " + change.before) &&
+          row.querySelector('[data-term-id]').textContent === change.after.text, "both proposition sides rendered");
+      }
+    };
     const corpus = [];
     for (const [name, value, wp] of [["heapStore", "v", true], ["heapLoad", "v'", true], ["heapPost", "v'", false]]) {
       await move(config[name]);
@@ -224,7 +241,12 @@ async function run() {
       for (const hyp of goal.spatial) check([...panel().querySelectorAll('[data-term-id]')]
         .some(n => n.dataset.termId === hyp.proposition.id && n.textContent === hyp.proposition.text), "canonical Heap resource");
       await hover("l", "Loc"); if (wp) { await hover("E", "CoPset"); await hover("r", "Val"); }
+      if (name === "heapStore" || name === "heapLoad") {
+        assertChanges(goal, { Hframe: "preserved", Hl: name === "heapStore" ? "changed" : "preserved" },
+          name === "heapStore" ? "wp_store" : "wp_load");
+      }
       if (name === "heapStore") {
+        await hover("v'", "Val", panel().querySelector('[data-resource-name="Hl"]'));
         // Native navigation is tested at EditorApi.showDocument; VS Code opens the file in the maintainer check.
         const some = native().find(node => node.textContent.startsWith("some ")); check(some, "native constant tag");
         await action("click", some); await wait("go to definition", () => host.navigations.length > 0);
@@ -245,10 +267,26 @@ async function run() {
       check(target().textContent === goal.target.text, "canonical SpinLock target");
       for (const hyp of [...goal.persistent, ...goal.spatial]) check([...panel().querySelectorAll('[data-term-id]')]
         .some(n => n.dataset.termId === hyp.proposition.id && n.textContent === hyp.proposition.text), "canonical SpinLock resource");
+      assertChanges(goal, { Hl: "preserved", HR: "preserved", Hcont: "preserved", Hinv: "preserved",
+        Hcond: stored ? "preserved" : "changed", Hpt: stored ? "preserved" : "changed" }, stored ? "imodintro" : "wp_store");
       await hover("l", "Loc"); await hover("γ", "GName"); await hover("b", "Bool");
       corpus.push({ name, tags: native().length, termButtons: panel().querySelectorAll('[data-term-id] button').length,
         goal, overflow: panel().scrollWidth > panel().clientWidth });
     }
+    await move(config.spinFrame);
+    const framed = JSON.parse((await host.snapshot(config.spinFrame)).display).goals[0];
+    assertChanges(framed, { Hl: "preserved", HR: "preserved", Hcont: "preserved", Hinv: "preserved",
+      Hcond: "preserved", Hpt: "removed" }, "iframe Hpt");
+    await move({ line: config.heapStore.line - 1, character: 4 });
+    check(!panel().querySelector('[data-before-goal-id]'), "comment outside tactic has the ordinary view");
+    // Inside the selected tactic, Lean uses its after-state. Keep the whole
+    // before-goal group rather than silently choosing one resulting goal.
+    await move({ ...config.contexts, character: config.contexts.character + 1 });
+    check(cards().length === 2 && panel().querySelectorAll('[data-after-goal-id]').length === 2,
+      "after-side split retains both descendants");
+    await move({ ...config.split, character: config.split.character + 3 });
+    check(panel().querySelector('[data-comparison-outcome="closed"]') &&
+      !panel().querySelector('[data-resource-status="removed"]'), "closed goal is not resource consumption");
     check(corpus.every(c => !c.overflow && c.termButtons === 0), "native terms overflow or create Tab-stop buttons");
     invalidFingerprint = true;
     await host.move(config.contexts);
@@ -256,16 +294,16 @@ async function run() {
     check(panel().textContent.includes("fingerprint is unavailable") && panel().textContent.includes("-32602") &&
       !panel().textContent.includes("[object Object]"), `package failure lost diagnostics: ${panel().textContent}`);
     invalidFingerprint = false;
-    await move(config.heapLoad);
+    await move(config.heapStore);
     globalThis.irisCapture = true; await until("screenshot", () => globalThis.irisCaptured);
     // Unmount cancels a pending state call; a late error cannot revive the panel.
     const unmount = arm(prefix + "state", config.binders); failure = { server: true };
     await host.move(config.binders); await wait("unmount response held", () => unmount.count > 0);
     const close = host.close(); await release(unmount); await close;
     check(container.textContent === "", "late response resurrected unmounted panel");
-    check(!warnings.some(w => /unique.*key|same key/i.test(w)), "React key warning");
+    check(!warnings.some(w => /unique.*key|same key/i.test(w)), `React key warning: ${warnings.join("\n")}`);
     return { continuity: identity, corpus, calls: host.calls.length, navigation: host.navigations,
-      warnings, knownGaps: ["enclosing-subterm selection", "native term keyboard policy", "real VS Code check"] };
+      warnings, knownGaps: ["enclosing-subterm selection", "native term keyboard policy"] };
   } finally {
     gates.forEach(g => { g.open = false; g.resolve(); });
     await host?.close(); console.error = originalError;

@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Iris.ProofMode.Widget.Model
+public meta import Iris.ProofMode.GoalChanges
 public meta import Iris.ProofMode.Display
 public meta import Iris.ProofMode.Widget.Model
 public meta import Vir.Infoview
@@ -127,29 +128,83 @@ private def displayIrisGoalAt?
       let (display, codes) ← (toDisplayGoal irisGoal goal.mvarId index goal.userName?).run codes
       return (some display, codes)
 
-/-- Return typed Iris proof-mode state for the goals at the requested cursor. -/
+private def displayComparison (tactic : String) (comparison : GoalChanges.Comparison)
+    (codes : Array CodeWithInfos) : IO (DisplayComparison × Array CodeWithInfos) := do
+  let before := comparison.before
+  let oldText ← before.context.runMetaM {} <| before.id.withContext do
+    before.resources.mapM fun resource => do
+      return (resource.id, toString (← ppExprTagged resource.proposition delabIProp).stripTags)
+  let mut codes := codes
+  let mut branches := #[]
+  for branch in comparison.branches do
+    let mut hypotheses := #[]
+    if let some after := branch.after? then
+      let ((_, values), nextCodes) ← after.context.runMetaM {} <| after.id.withContext do
+        (displayHypotheses after.iris.hyps).run codes
+      hypotheses := values
+      codes := nextCodes
+    let resources ← branch.resources.mapM fun change => do
+      let some resource := change.after?.orElse (fun _ => change.before?) | throw <| IO.userError "resource change has neither side"
+      return {
+        id := toString resource.id.name
+        name := toString resource.name
+        status := change.status
+        after? := (hypotheses.find? (·.id == toString resource.id.name)).map fun h =>
+          { h.proposition with id := s!"iris-change-{before.id.name}-{branch.id.name}-{resource.id.name}" }
+        before? := (oldText.find? (·.1 == resource.id)).map (·.2)
+      : DisplayResourceChange }
+    branches := branches.push { id := toString branch.id.name, resources, unavailable? := branch.unavailable? }
+  return ({
+    tactic, beforeId := toString before.id.name, branches
+    closed := comparison.closed, unavailable? := comparison.unavailable?
+  }, codes)
+
+/-- Use Lean's goal selection once for both the current view and the comparison.
+Trailing whitespace retains the ordinary view but is not a tactic-under-cursor comparison. -/
 @[server_rpc_method]
 def state (params : StateRequest) : RequestM (RequestTask SnapshotReply) := do
-  let goalsTask ← FileWorker.getInteractiveGoals {
-    textDocument := { uri := (← RequestM.readDoc).meta.uri }
-    position := params.pos
-  }
-  RequestM.mapRequestTaskCostly goalsTask fun goals? => do
+  let doc ← RequestM.readDoc
+  let pos := doc.meta.text.lspPosToUtf8Pos params.pos
+  RequestM.mapTaskCostly (FileWorker.findGoalsAt? doc pos) fun results? => do
     RequestM.checkCancelled
     let mut displayGoals := #[]
     let mut codes := #[]
-    if let some goals := goals? then
-      for (goal, index) in goals.goals.zipIdx do
-        -- Cancellation is cooperative: do not start another goal after retirement.
+    for result in results?.getD [] do
+      let ti := result.tacticInfo
+      let ci := { result.ctxInfo with mctx := if result.useAfter then ti.mctxAfter else ti.mctxBefore }
+      let goalIds := if result.useAfter then ti.goalsAfter else ti.goalsBefore
+      let goals ← ci.runMetaM {} <| goalIds.toArray.mapM Lean.Widget.goalToInteractive
+      let start := displayGoals.size
+      for goal in goals do
         RequestM.checkCancelled
-        let (displayGoal?, nextCodes) ← displayIrisGoalAt? goal index codes
+        let (displayGoal?, nextCodes) ← displayIrisGoalAt? goal displayGoals.size codes
         codes := nextCodes
         if let some displayGoal := displayGoal? then
           displayGoals := displayGoals.push displayGoal
+      if !result.hangingBy && ti.stx.getRange?.any (fun range => range.start ≤ pos && pos < range.stop) then
+        let comparisons ← GoalChanges.compareTactic result.ctxInfo ti
+        for comparison in comparisons do
+          RequestM.checkCancelled
+          -- One before-goal owns ALL its outcomes. On the after side, attach the group
+          -- once to its first visible descendant, without discarding the other branches.
+          let owner? := (displayGoals.toList.drop start).find? fun goal =>
+            goal.id == toString comparison.before.id.name ||
+              comparison.branches.any (fun branch => goal.id == toString branch.id.name)
+          let ownerId ← if let some owner := owner? then pure owner.id else do
+            -- In particular, preserve a closed goal as a closed card, not a list of removals.
+            let before := comparison.before
+            let (goal, nextCodes) ← before.context.runMetaM {} <| before.id.withContext do
+              (toDisplayGoal before.iris before.id displayGoals.size none).run codes
+            codes := nextCodes
+            displayGoals := displayGoals.push goal
+            pure goal.id
+          let label := (ti.stx.getRange?.map fun range =>
+            String.Pos.Raw.extract doc.meta.text.source range.start range.stop).getD (toString ti.stx.getKind)
+          let (display, nextCodes) ← displayComparison label comparison codes
+          codes := nextCodes
+          displayGoals := displayGoals.map fun goal =>
+            if goal.id == ownerId then { goal with comparison? := some display } else goal
     RequestM.checkCancelled
-    return {
-      display := (toJson ({ goals := displayGoals } : WidgetState)).compress
-      codes
-    }
+    return { display := (toJson ({ goals := displayGoals } : WidgetState)).compress, codes }
 
 end Iris.ProofMode.Widget

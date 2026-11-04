@@ -113,6 +113,7 @@ await withCleanup(async () => {
     heapPost: position("widget-position-heap-post"),
     spinOpen: position("widget-position-spin-open"),
     spinStored: position("widget-position-spin-stored"),
+    spinFrame: position("widget-position-spin-frame"),
     ...(demo ? { source } : {}),
   };
   assert.ok(Number.isFinite(config.width) && config.width >= 200);

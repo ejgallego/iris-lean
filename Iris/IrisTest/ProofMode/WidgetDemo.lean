@@ -105,7 +105,9 @@ example (γ : GName) (lk : Val) (R : IProp GF) :
   -- widget-position-spin-open
   wp_store
   -- widget-position-spin-stored
-  imodintro; iframe Hpt
+  imodintro
+  -- widget-position-spin-frame
+  iframe Hpt
   simp only [Bool.false_eq_true, ↓reduceIte]; iframe
   iapply Hcont; itrivial
 

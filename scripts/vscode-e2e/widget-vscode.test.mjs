@@ -21,6 +21,9 @@ const WIDGET = `(() => {
   return { present: true, tactic, text: w.innerText,
     cards: cards.map(c => ({ id: c.dataset.goalId, expanded: c.querySelector('header button')?.getAttribute('aria-expanded'), marked: c.__irisE2E ?? null })),
     termButtons: w.querySelectorAll('[data-term-ref]').length, buttons: w.querySelectorAll('button').length,
+    tactics: [...w.querySelectorAll('[data-tactic]')].map(e => e.dataset.tactic),
+    changes: [...w.querySelectorAll('[data-resource-status]')].map(e => ({ name: e.dataset.resourceName,
+      status: e.dataset.resourceStatus, text: e.innerText, native: !!e.querySelector('[data-has-tooltip-on-hover]') })),
     busy: !!w.closest('[aria-busy="true"]') };
 })()`;
 const widget = () => infoviewEval(vs, WIDGET);
@@ -53,9 +56,19 @@ try {
     return { termButtons: w.termButtons, buttons: w.buttons, standardDiff };
   });
 
+  await check('heap store: typed resource comparison', async () => {
+    const w = await waitWidget('store comparison', w => w.present && w.tactics.includes('wp_store'));
+    const cell = w.changes.find(r => r.name === 'Hl'), frame = w.changes.find(r => r.name === 'Hframe');
+    assert(w.changes.length === 2, 'store must account for both resources');
+    assert(cell?.status === 'changed' && cell.text.includes("l ↦ some v'") && cell.text.includes('was: l ↦ some v'),
+      'store must show new and old cell propositions');
+    assert(cell.native && frame?.status === 'preserved', 'native new term and preserved frame');
+    return { changes: w.changes };
+  });
+
   await check('heap load: Hl changed, Hframe unchanged', async () => {
     await at('widget-position-heap-load');
-    const w = await waitWidget('heap load widget', w => w.present && w.text.includes("l ↦ some v'"));
+    const w = await waitWidget('heap load widget', w => w.present && w.tactics.includes("wp_load") && w.text.includes("l ↦ some v'"));
     assert(w.text.includes("l' ↦ some w"), 'Hframe changed');
     return { text: w.text };
   });
@@ -114,11 +127,25 @@ try {
   ])
     await check(`spinlock ${marker.split('-').at(-1)}`, async () => {
       await at(marker);
-      const w = await waitWidget(marker, w => w.present && w.text.includes('Hinv') && w.text.includes(cell) && w.text.includes(targetPrefix));
+      const w = await waitWidget(marker, w => w.present && w.text.includes('Hinv') && w.text.includes(cell) && w.text.includes(targetPrefix) &&
+        w.tactics.includes(marker.endsWith('open') ? 'wp_store' : 'imodintro'));
       for (const term of ['locked γ', 'HR:', 'Hcond:', 'spinlockN']) assert(w.text.includes(term), `missing ${term}`);
       assert(w.termButtons === 0, 'custom term buttons remain');
       return { termButtons: w.termButtons, text: w.text };
     });
+
+  await check('spinlock store: typed resource comparison', async () => {
+    await at('widget-position-spin-open');
+    const w = await waitWidget('spin store comparison', w => w.present && w.text.includes('Hinv') && w.tactics.includes('wp_store'));
+    const expected = { Hpt: 'changed', Hcond: 'changed', Hinv: 'preserved', Hl: 'preserved', HR: 'preserved', Hcont: 'preserved' };
+    assert(w.changes.length === 6, 'spin store must account for all resources');
+    for (const [name, status] of Object.entries(expected))
+      assert(w.changes.find(r => r.name === name)?.status === status, `${name} should be ${status}`);
+    const cell = w.changes.find(r => r.name === 'Hpt'), condition = w.changes.find(r => r.name === 'Hcond');
+    assert(cell.native && cell.text.includes('#false') && cell.text.includes('was: ▷ l'), 'cell before/after');
+    assert(condition.text.includes('was: ▷ if b'), 'condition loses its later modality');
+    return { changes: w.changes };
+  });
 
   await check('ordinary Lean goal renders no Iris panel', async () => {
     await at('widget-position-ordinary');

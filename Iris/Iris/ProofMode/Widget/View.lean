@@ -106,6 +106,67 @@ def targetSection : RuntimeM (Client.Component TargetProps) := do
     return ← jsx%{<section aria-label="Target" style={(← Style.targetSection)}><div style={(← Style.target)}>
       <span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>⊢</span>{value}</div></section>})
 
+structure ResourceChangeProps where
+  context : Client.Context
+  change : DisplayResourceChange
+
+def resourceChangeRow : RuntimeM (Client.Component ResourceChangeProps) := do
+  let term ← interactiveTerm
+  Client.Component.ofLean (fun props => do
+    let change := props.change
+    let (status, label) := match change.status with
+      | .changed => ("changed", "changed")
+      | .preserved => ("preserved", "preserved")
+      | .added => ("added", "new")
+      | .removed => ("removed", "removed")
+    let value ← if let some after := change.after? then
+      Client.Component.render term {
+        context := props.context, term := after, ariaLabel := change.name ++ " after tactic"
+      } (some (← JsValue.ofString (toString props.context.epoch)))
+    else jsx%{<span style={(← Style.removedTerm)}>{Html.text (change.before?.getD "")}</span>}
+    let old : Js.Array Node ← if change.status == .changed then
+      Js.Array.ofArray #[← jsx%{<div key="old" style={(← Style.oldResource)}>
+        {Html.text ("was: " ++ change.before?.getD "")}</div>}]
+    else Js.Array.empty
+    return ← jsx%{<div role="listitem" data-resource-name={(← JsValue.ofString change.name)}
+      data-resource-status={(← JsValue.ofString status)} style={(← Style.resourceChange)}>
+      <div><strong style={(← Style.hypothesisName)}>{Html.text change.name}</strong>
+        {Html.text ": "}<span style={(← Style.resourceStatus)}>{Html.text label}</span></div>
+      <div>{value}{old}</div></div>})
+
+structure ComparisonProps where
+  context : Client.Context
+  comparison : DisplayComparison
+
+def comparisonSection : RuntimeM (Client.Component ComparisonProps) := do
+  let row ← resourceChangeRow
+  Client.Component.ofLean (fun props => do
+    let comparison := props.comparison
+    let mut contents : Array (Js Node) := #[]
+    if comparison.closed then
+      contents := contents.push (← jsx%{<div key="closed" data-comparison-outcome="closed">Goal closed</div>})
+    if let some reason := comparison.unavailable? then
+      contents := contents.push (← jsx%{<div key="unavailable" data-comparison-outcome="unavailable">
+        {Html.text ("Comparison unavailable: " ++ reason)}</div>})
+    for (branch, index) in comparison.branches.zipIdx do
+      let mut children : Array (Js Node) := #[]
+      if comparison.branches.size > 1 then
+        children := children.push (← jsx%{<strong key="heading">{Html.text s!"Result {index + 1} of {comparison.branches.size}"}</strong>})
+      if let some reason := branch.unavailable? then
+        children := children.push (← jsx%{<div key="unavailable" data-comparison-outcome="unavailable">
+          {Html.text ("Comparison unavailable: " ++ reason)}</div>})
+      for change in branch.resources do
+        children := children.push (← Client.Component.render row { change, context := props.context }
+          (some (← JsValue.ofString change.id)))
+      let nativeChildren : Js.Array Node ← Js.Array.ofArray children
+      contents := contents.push (← jsx%{<div key={(← JsValue.ofString branch.id)} role="list"
+        data-after-goal-id={(← JsValue.ofString branch.id)} aria-label="Resource changes">{nativeChildren}</div>})
+    let nativeContents : Js.Array Node ← Js.Array.ofArray contents
+    return ← jsx%{<section aria-label="Tactic resource changes" data-before-goal-id={(← JsValue.ofString comparison.beforeId)}
+      data-tactic={(← JsValue.ofString comparison.tactic)} style={(← Style.comparisonSection)}>
+      <div style={(← Style.comparisonHeading)}>{Html.text ("After " ++ comparison.tactic ++ " · resources")}</div>
+      {nativeContents}</section>})
+
 structure GoalProps where
   context : Client.Context
   goal : DisplayGoal
@@ -114,6 +175,7 @@ structure GoalProps where
 def goalCard : RuntimeM (Client.Component GoalProps) := do
   let contextView ← contextSection
   let targetView ← targetSection
+  let changesView ← comparisonSection
   Client.Component.ofLean (fun props => do
     let goal := props.goal
     let expandedState ← Client.useState props.initiallyExpanded
@@ -147,6 +209,9 @@ def goalCard : RuntimeM (Client.Component GoalProps) := do
       } (some (← js#"spatial")))
     children := children.push (← Client.Component.render targetView { term := goal.target, context := props.context }
       (some (← js#"target")))
+    if let some comparison := goal.comparison? then
+      children := children.push (← Client.Component.render changesView { comparison, context := props.context }
+        (some (← js#"comparison")))
     let contents : Js.Array Node ← if expanded then
       let nativeChildren : Js.Array Node ← Js.Array.ofArray children
       Js.Array.ofArray #[← jsx%{<div key="content" id={contentId} style={(← Style.goalContent)}>{nativeChildren}</div>}]

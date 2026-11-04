@@ -11,6 +11,7 @@ const positions = [
   ["heapPost", "Heap · 3. After load", "The read returned v'. The target now asserts that result and ownership of both cells. iframe and itrivial finish the proof."],
   ["spinOpen", "SpinLock · 1. Open invariant", "Inside release_spec: Hinv is persistent. Hpt owns the lock cell, Hcond records its old state, and Hl/HR supply the ghost token and protected resource. The target stores false under a reduced mask."],
   ["spinStored", "SpinLock · 2. After store", "Hpt now owns the unlocked cell. The target restores the invariant and mask before returning to the caller's continuation; Hl and HR are needed to close the invariant."],
+  ["spinFrame", "SpinLock · 3. Frame the cell", "At iframe Hpt: the after-view lists Hpt as removed from this goal. This describes the context change, not a claim that the cell was consumed."],
   ["contexts", "Contexts", "Two persistent resources, two spatial resources, and the target."],
   ["split", "Split goals", "Expand the second goal. Hover over the shared P in each goal independently."],
   ["binders", "Nested binders", "Hover over n and m before introduction; their types come from saved binder contexts."],

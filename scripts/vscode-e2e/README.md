@@ -48,3 +48,8 @@ The store check also records the normal Tactic state's built-in diff spans.
 These checks do not claim physical pointer or keyboard accessibility coverage.
 The harness is committed here; generated profiles, logs and screenshots remain
 under the run-output directory and must not be added to Git.
+
+Round B adds Heap store and SpinLock store resource-status checks (13 checks total),
+including the old/new proposition text, preserved resources and native new-side
+terms. Cursor waits identify the selected tactic so the new after-view cannot
+make a stale snapshot accidentally satisfy the next position's predicate.
