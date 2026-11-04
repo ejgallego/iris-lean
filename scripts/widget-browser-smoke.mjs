@@ -1,12 +1,14 @@
 // Real Iris server + official RPC client + actual VIR shell and Lean-authored UI.
 // Run after lake build IrisTest.ProofMode.WidgetDemo +Iris.ProofMode.Widget:vir.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cpus, loadavg, platform, release } from "node:os";
 
 const iris = new URL("../Iris/", import.meta.url);
 const vir = new URL(".lake/packages/lean_vir/", iris);
@@ -18,10 +20,12 @@ const { finishLeanProcess } = await import(new URL("tests/infoview/rpc-process-t
 const { withCleanup } = await import(new URL("tests/infoview/rpc-test-support.js", vir));
 const sourcePath = new URL("IrisTest/ProofMode/WidgetDemo.lean", iris);
 const demo = process.argv.includes("--demo");
+const comparison = process.argv.includes("--comparison");
+assert.ok(!(demo && comparison), "choose either demo or comparison");
 // Only this in-memory document sees the server cancellation probe.
 const originalSource = await readFile(sourcePath, "utf8");
 const source = demo ? originalSource : originalSource.replace("import Iris.ProofMode.Widget\n",
-  "import Iris.ProofMode.Widget\npublic meta import IrisTest.ProofMode.WidgetRpc\n");
+  `import Iris.ProofMode.Widget\npublic meta import IrisTest.ProofMode.${comparison ? "WidgetCompare" : "WidgetRpc"}\n`);
 const position = marker => {
   const lines = source.split("\n");
   const matches = lines.flatMap((line, index) => line.includes(marker) ? [index] : []);
@@ -30,10 +34,10 @@ const position = marker => {
   return { line, character: lines[line].search(/\S/) };
 };
 const bundle = await build({
-  entryPoints: [fileURLToPath(new URL(demo ? "widget-demo-entry.mjs" : "widget-browser-entry.mjs", import.meta.url))],
+  entryPoints: [fileURLToPath(new URL(comparison ? "widget-comparison-entry.mjs" : demo ? "widget-demo-entry.mjs" : "widget-browser-entry.mjs", import.meta.url))],
   nodePaths: [fileURLToPath(new URL("node_modules", vir))],
   bundle: true, write: false, platform: "browser", format: demo ? "esm" : "iife",
-  define: { "process.env.NODE_ENV": JSON.stringify("development") },
+  define: { "process.env.NODE_ENV": JSON.stringify(comparison ? "production" : "development") },
   plugins: [{ name: "vir-source-override", setup(builder) {
     if (process.env.IRIS_VIR_SOURCE_DIR) {
       builder.onResolve({ filter: /\/web\/app\/vir-infoview-widget\.js$/ }, () => ({
@@ -41,6 +45,13 @@ const bundle = await build({
       }));
     }
   }}, { name: "official-session-context", setup(builder) {
+    if (comparison) {
+      builder.onResolve({ filter: /^react-dom$/ }, args => {
+        if (args.importer.includes("@leanprover/infoview/dist/"))
+          return { path: fileURLToPath(new URL("tests/infoview/react-dom-compat.js", vir)) };
+      });
+      return;
+    }
     builder.onResolve({ filter: /^@leanprover\/infoview$/ }, () => ({ path: "context", namespace: "iris-test" }));
     builder.onLoad({ filter: /.*/, namespace: "iris-test" }, () => ({
       contents: `import * as React from 'react';
@@ -61,6 +72,22 @@ const bundle = await build({
     }));
   }}],
 });
+
+const comparisonAssets = {};
+if (comparison) {
+  const descriptorUrl = new URL(".lake/build/vir/module-sets/IrisTest/ProofMode/WidgetCompare.irpkg-set.json", iris);
+  const descriptor = JSON.parse(await readFile(descriptorUrl, "utf8"));
+  const paths = [];
+  for (const [index, entry] of descriptor.packages.entries()) {
+    const bytes = await readFile(new URL(entry.path, descriptorUrl));
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256);
+    const path = `/comparison-package-${index}`;
+    paths.push(path); comparisonAssets[path] = ["application/octet-stream", bytes];
+  }
+  comparisonAssets["/comparison-packages.json"] = ["application/json", JSON.stringify(paths)];
+  comparisonAssets["/runtime.wasm"] = ["application/wasm", await readFile(new URL("web/public/vir-upstream.wasm", vir))];
+  comparisonAssets["/infoview.css"] = ["text/css", await readFile(new URL("node_modules/@leanprover/infoview/dist/index.css", vir))];
+}
 
 let child, connection, server, chrome, cdp, deadline;
 const keepalives = new Map(), diagnostics = [];
@@ -96,6 +123,7 @@ await withCleanup(async () => {
     width: Number(process.env.IRIS_WIDGET_WIDTH ?? 360),
     fontSize: Number(process.env.IRIS_WIDGET_FONT_SIZE ?? 14),
     theme: process.env.IRIS_WIDGET_THEME ?? "light",
+    captureComparison: comparison && Boolean(process.env.IRIS_WIDGET_SCREENSHOT),
     contexts: position("widget-position-contexts"), split: position("widget-position-split"),
     binders: position("widget-position-binders"),
     ordinary: position("widget-position-ordinary"),
@@ -124,11 +152,12 @@ await withCleanup(async () => {
       if (req.method === "GET") {
         const assets = {
           "/": ["text/html", `<!doctype html><meta charset="utf-8"><style>
-            :root { ${themes[config.theme]}; --vscode-editor-font-size:${config.fontSize}px;  }
+            :root { ${themes[config.theme]}; --vscode-editor-font-size:${config.fontSize}px; ${comparison ? '--vscode-editor-font-family:ui-monospace,monospace; --vscode-font-family:system-ui,sans-serif;' : ''} }
             body { background:var(--vscode-editor-background); color:var(--vscode-editor-foreground); }
-            </style><div id="app"></div><script ${demo ? 'type="module"' : ""} src="/test.js"></script>`],
+            </style>${comparison ? '<link rel="stylesheet" href="/infoview.css">' : ''}<div id="app"></div><script ${demo ? 'type="module"' : ""} src="/test.js"></script>`],
           "/test.js": ["text/javascript", bundle.outputFiles[0].contents],
           "/config": ["application/json", JSON.stringify(config)],
+          ...comparisonAssets,
         };
         const asset = assets[req.url];
         if (!asset) { res.writeHead(404); res.end(); return; }
@@ -202,6 +231,48 @@ await withCleanup(async () => {
   chrome = await launchChromium(); cdp = await openChromiumPage(chrome);
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: config.width, height: 900, deviceScaleFactor: 1, mobile: false });
   await bounded(navigate(cdp, `http://127.0.0.1:${server.address().port}/`));
+  if (comparison) {
+    let handledAction;
+    const environment = {
+      recordedAt: new Date().toISOString(), node: process.version,
+      browser: await cdp.send("Browser.getVersion"), platform: platform(), kernel: release(),
+      cpu: cpus()[0]?.model, loadAtStart: loadavg(), viewport: { width: config.width, height: 900 },
+      fontSize: config.fontSize, codeFont: "ui-monospace,monospace", theme: config.theme, argv: process.argv.slice(2),
+      commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: fileURLToPath(iris), encoding: "utf8" }).trim(),
+      sourceHashes: {}, assetHashes: {},
+      note: "Shared host; no other builds or tests launched by this run. CPU load is not controlled.",
+    };
+    const hash = value => createHash("sha256").update(value).digest("hex");
+    for (const path of ["scripts/widget-browser-smoke.mjs", "scripts/widget-comparison-entry.mjs",
+      "Iris/IrisTest/ProofMode/WidgetCompare.lean", "Iris/IrisTest/ProofMode/WidgetDemo.lean",
+      "Iris/Iris/ProofMode/Widget/Client.lean", "Iris/Iris/ProofMode/Widget/View.lean",
+      "Iris/lake-manifest.json", "Iris/lean-toolchain", "Iris/.lake/packages/lean_vir/package-lock.json"]) {
+      environment.sourceHashes[path] = hash(await readFile(new URL(`../${path}`, import.meta.url)));
+    }
+    environment.assetHashes["/test.js"] = hash(bundle.outputFiles[0].contents);
+    environment.assetHashes["opened-document"] = hash(source);
+    for (const [path, [, bytes]] of Object.entries(comparisonAssets)) environment.assetHashes[path] = hash(bytes);
+    while (!await bounded(evaluate(cdp, "Boolean(globalThis.irisComparisonResult)"))) {
+      const action = await evaluate(cdp, "globalThis.irisComparisonPointer");
+      if (action && action.id !== handledAction) {
+        handledAction = action.id;
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: action.x, y: action.y });
+      }
+      if (config.captureComparison && await evaluate(cdp, "Boolean(globalThis.irisComparisonCapture)")) {
+        const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
+        await writeFile(process.env.IRIS_WIDGET_SCREENSHOT, Buffer.from(data, "base64"));
+        await evaluate(cdp, "globalThis.irisComparisonCapture = false; globalThis.irisComparisonCaptured = true");
+      }
+      await bounded(new Promise(resolve => setTimeout(resolve, 20)));
+    }
+    const result = await evaluate(cdp, "globalThis.irisComparisonResult");
+    assert.equal(result.ok, true, JSON.stringify(result));
+    result.value.environment = { ...environment, loadAtEnd: loadavg() };
+    if (process.env.IRIS_WIDGET_RESULT) await writeFile(process.env.IRIS_WIDGET_RESULT, JSON.stringify(result.value, null, 2) + "\n");
+    console.log("PASS: Iris native-code comparison", { facts: result.value.facts, samples: result.value.samples.length,
+      exactNativeElements: result.value.exactNativeElements, navigation: result.value.navigation });
+    return;
+  }
   // Drive actual browser keyboard activation, not a synthetic click claiming to test Enter.
   for (;;) {
     const status = await bounded(evaluate(cdp, "({phase: globalThis.irisPhase, failure: globalThis.irisFailure})"));
