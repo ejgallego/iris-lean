@@ -1,80 +1,72 @@
 # Proposal: compare Iris resources across proof steps
 
 **Design only; maintainer decision required.** Keep this beside Tactic state.
-For the simple question “what changed in this expression?”, Lean's built-in diff
-already covers much of the Heap example. A second coloured term diff alone would
-add little; keeping the present widget without resource history is a valid outcome.
+Lean's built-in diff already covers much of “what changed in this expression?”
+A second coloured term diff adds little; keeping the widget without resource
+history is a valid outcome.
 
 ## Existing baseline and possible added value
 
-In real VS Code, Tactic state already marks the upcoming store's changes in red,
-including `l`, `v` and the program. The captured run also marks `l'` and `w`
-although `Hframe`'s proposition stays unchanged: typed resource status could make
-that preservation explicit. Lean's `getInteractiveGoals` uses tactic
-before/after data and `diffInteractiveGoals` to decorate `CodeWithInfos` with
-`diffStatus` tags; upstream `InteractiveCode` renders them. Our Iris projection
-currently pretty-prints each proposition afresh and does not retain those diffs.
+Tactic state already marks the upcoming store's changes in red. Our real VS Code
+capture marks `l`, `v`, the program, and also `l'`/`w` although `Hframe`'s
+proposition stays unchanged. Lean's `getInteractiveGoals` uses tactic before/after
+information and `diffInteractiveGoals` to decorate `CodeWithInfos`; native
+`InteractiveCode` renders those tags. Our separately printed propositions omit them.
 
-The possible addition is **both selected states visible together, organised by
-Iris resource identity**: changed, added, removed/unpaired and preserved rows,
-with unchanged resources collapsible. Heap's `Hl` would show `l ↦ some v` beside
-`l ↦ some v'`, while `Hframe : l' ↦ some w` stays visible as preserved. SpinLock's
-`Hpt` changes to the `false` cell and loses later; `Hcond` loses later while
-`Hinv`, `Hl : locked γ` and `HR` remain. Keep target/mask changes separate.
+Possible added value is **both states visible together, grouped by Iris resource
+identity**: changed, added, removed/unpaired and preserved rows. Heap's `Hl` goes
+from `l ↦ some v` to `l ↦ some v'`; `Hframe` stays preserved. SpinLock's `Hpt`
+changes to the `false` cell and loses later; `Hcond` loses later while `Hinv`,
+`Hl : locked γ` and `HR` remain. Show target/mask changes separately.
 
-“Consumed”, “framed”, or “opened/closed this invariant” are stronger explanations
-than two snapshots establish. Removed resources may be renamed, replaced or
-moved to another branch; preserved resources are not necessarily framed by the
-tactic. Use those labels only with tactic/invariant provenance. An Iris-specific
-view could then group exposed resources with their invariant and explain closing
-obligations. First ask the authors whether this helps beyond the existing diff.
+“Consumed”, “framed”, or “opened/closed this invariant” require tactic/invariant
+provenance. Two snapshots alone cannot distinguish consumption from renaming,
+replacement or movement into another branch. Preserved does not imply framed.
 
-## Which previous step, and which goal?
+## Which previous step? Start with the tactic under the cursor
 
-Initially, explicitly pin a **before position and goal**, then select an after
-position/goal in the same document version and elaboration generation. Label both
-positions. The baseline is neither the last cursor event nor the previous source
-line. An edit or server restart invalidates it. Use the Heap `heap-store` →
-`heap-load` and SpinLock `spin-open` → `spin-stored` pause points as examples.
+**Recommend the selected tactic's before/after pair first.** Reuse Lean's
+selection of tactic information and its saved contexts, rather than guessing
+from source lines or cursor history. Label the tactic/range and both sides.
+At `heap-store` or `spin-open`, selecting `wp_store` compares against the states
+illustrated at `heap-load` or `spin-stored`. Moving onto `wp_load` selects that
+new tactic's pair.
 
-For one tactic, reuse Lean's before/after provenance and parent-goal relation
-where available. Arbitrary pinned positions need explicit goal pairing when IDs
-change or goals branch/disappear. List order, user names and the widget's
-collapse-key fallback cannot establish semantic correspondence.
+| Model | User effort | Branching and multiple goals |
+| --- | --- | --- |
+| Tactic under cursor, first prototype | Move the cursor; no pin or baseline management. | Use tactic parent/successor data. Group each before-goal with its after-goals; allow choosing which branch to expand. Never silently select the first result. |
+| Explicit pin, later extension | Choose before/after positions and goals; re-pin after edits/restart. Supports several tactics or distant states. | Correspondence across the span is harder; require explicit goal pairing when ancestry is unavailable. |
+
+A solved goal is closed, not “all resources consumed”. Keep unchanged siblings
+distinct. Missing/failed elaboration or ambiguous ancestry yields unavailable or
+unpaired results. Names, list order and collapse keys never establish identity.
+Both modes check document version/generation: recompute the tactic pair after
+edits; invalidate a pin.
 
 ## Reuse upstream diffs; add only the missing resource layer
 
-Prefer existing diff data for the **same tactic pair and expression root**.
-`InteractiveCode` already understands native diff tags; no new highlighting
-renderer is needed. Whole-goal tags, however, refer to the enclosing `Entails'`
-expression. Our independently printed Iris propositions have different roots.
-Do not copy their paths, infer spans from text, or assume the cursor's diff
-compares the user's pinned pair. Reuse requires a verified typed subtree
-projection/rebasing contract; without one, leave token-level highlighting to
-Tactic state and show whole before/after propositions in the widget.
+Prefer existing diff data for the **same tactic pair and expression root**;
+`InteractiveCode` already renders it. Whole-goal paths refer to the enclosing
+`Entails'`, whereas independently printed Iris propositions have different roots.
+Reuse needs a verified typed subtree projection/rebasing contract. Do not copy
+paths or infer spans from text; without that contract, leave token highlighting
+to Tactic state and display whole before/after propositions. A future pin cannot
+assume the cursor's diff compares its chosen pair.
 
 `parseIrisGoal?` supplies `Hyps.hyp` nodes with `IVarId`, persistence and typed
-expressions. Pair resources by `IVarId` within the same generation and compare
-expressions under frozen contexts/metavariable assignments, without text matching.
-Both sampled stores preserve cell IDs, even when row order changes; other tactics
-may not. Structural inequality is not semantic inequivalence. `IrisGoal` does
-not itself supply history, goal ancestry or consumed/framed provenance; the
-current display strings are insufficient for that server-side comparison.
+expressions. Pair resources by ID within one generation and compare expressions
+under frozen contexts/metavariable assignments. Both sampled stores preserve cell
+IDs despite row reordering; other tactics may not. Structural change is not
+semantic inequivalence. `IrisGoal` alone provides neither history nor ancestry;
+the current display strings cannot support this server-side comparison.
 
-Lean 4.35 publicly exports `diffInteractiveGoals`; lower-level `exprDiff` and
-`addDiffTags` are internal module definitions. If safe per-resource expression
-diffs become necessary, seek a supported upstream adapter instead of duplicating
-the algorithm or importing private internals. A small typed resource comparison
-would supplement, not replace, the existing expression diff.
+Lean 4.35 exports `diffInteractiveGoals`; lower-level `exprDiff`/`addDiffTags` are
+internal. If per-resource expression diffs become necessary, seek a supported
+upstream adapter rather than duplicating the algorithm or importing internals.
 
-## Failure boundaries and decision
+Retain only the selected comparison; release it on replacement/unmount. Never mix
+elaboration generations. Before-state text can remain noninteractive until its
+original RPC/position context is supported; never borrow current-goal paths.
 
-Show unpaired/unavailable states for fresh IDs, incompatible contexts, ambiguous
-branches or failed/stale requests. Never silently advance the pin. Retain only
-one baseline and the current snapshot; invalidate on edits/restart and release
-on replacement/unmount. Baseline text can remain noninteractive until its original
-RPC/position context is supported; never borrow current-goal subterm paths.
-
-Decision: is explicit resource pairing and simultaneous before/after display
-useful enough to build, or does Tactic state's existing diff meet the authors'
-needs? No history, diff mapping or resource-status code is added by this proposal.
+Decision: would tactic-local resource comparison add enough beyond Tactic state's
+diff to build? No history, diff mapping or resource-status code is added here.

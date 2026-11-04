@@ -97,18 +97,26 @@ now evaluates possible resource-level value beyond that built-in expression diff
 Run locally, with no concurrent Lake build:
 
 ```bash
-TMPDIR="$PWD/.tmp" node .tmp/vscode-e2e/widget-vscode.test.mjs
+TMPDIR="$PWD/.tmp" node scripts/vscode-e2e/widget-vscode.test.mjs
 ```
 
-The harness remains git-excluded for its author's separate commit; it is not yet
-a shipped test entrypoint. This run's results, temporary profile, VS Code log and
-screenshots are under
+The real-VS-Code gate is now in [`scripts/vscode-e2e/`](../scripts/vscode-e2e/README.md),
+with generated output under `$TMPDIR/vscode-e2e-runs` (override `IRIS_E2E_RUNS`).
+It is deliberately outside CI: Linux, desktop VS Code, Xvfb and installed
+Lean/TOML extensions are required. The initial eleven-check run's results,
+temporary profile, VS Code log and screenshots are under
 `.tmp/vscode-e2e-runs/2026-11-04T14-24-42-026Z/`. Its original nine-check predecessor
 is retained in `.tmp/vscode-e2e/runs/2026-11-04T14-02-49-717Z/`.
 The added definition-navigation round trip included a roughly 47-second wait
 before the Heap postcondition became ready; this is not a latency benchmark or
 an attribution to widget rendering. Full editor focus/scroll, restart recovery,
 long-session reference release and accessibility remain open.
+
+The relocated gate was then run from `scripts/vscode-e2e/` using its default
+workspace resolution: **11/11 pass**, with evidence in
+`.tmp/vscode-e2e-runs/2026-11-04T14-32-38-659Z/`. No profiles or generated outputs
+were copied into the harness source directory. This is the committed local gate;
+it is not enabled in CI.
 
 ## Pre-migration coverage map (historical)
 

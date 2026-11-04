@@ -127,10 +127,26 @@ For the automated gate, build `IrisTest.ProofMode.Widget` and
 (the Node commands run from the checkout root). Chromium is needed only for the
 browser regression. See [coverage and limits](widget-testing-surface.md).
 
+The **real VS Code gate** is separate from that browser host:
+
+```bash
+# From the worktree root; keep the cache environment above and avoid concurrent Lake builds.
+TMPDIR="$PWD/.tmp" node scripts/vscode-e2e/widget-vscode.test.mjs
+```
+
+It launches desktop VS Code with an isolated Xvfb display/profile and the installed
+Lean extension. It needs Linux, desktop VS Code, Xvfb, Node 22+, and the installed
+Lean/TOML extensions; see the [harness README](../scripts/vscode-e2e/README.md).
+Outputs go to `$TMPDIR/vscode-e2e-runs` (or `IRIS_E2E_RUNS`), outside the harness
+source directory. The typing test never saves its buffer. This gate passes on
+the prototype and stays out of CI because it requires a desktop VS Code install.
+It complements the presenter's manual run-through before the meeting.
+
 ## Questions for the Iris authors
 
 - When does this resource grouping help alongside the normal Tactic state?
-- Would a pinned before/after resource comparison explain a useful proof step?
+- Would resource changes before/after the tactic under the cursor explain a useful
+  proof step? Would comparing more distant states justify explicit pinning?
   Which changes matter most: ownership, modalities, masks, or invariant state?
 - What is the next representative proof: lock acquisition/CAS, fractional
   ownership, a concurrent client, or custom notation?
