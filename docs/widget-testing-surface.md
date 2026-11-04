@@ -1,5 +1,52 @@
 # Widget testing and use-case surface
 
+## Guided demo tour (Round C)
+
+The eight steps live in `IrisTest.ProofMode.WidgetTour.Model`, beside the demo.
+`check_widget_tour` checks their references against the complete `WidgetDemo`
+source. Missing and duplicate markers are build errors; the model tests also
+cover invalid destinations, line insertion, exact selection, neutral selection
+and the nearest preceding step. Actual negative builds, with one marker removed
+or duplicated, both fail with the expected count (0 or 2).
+
+The separate Lean-authored tour uses VIR's `EditorContext` and
+`EditorConnection.revealPosition`. Its server resolves destinations from the
+current document buffer on each position/revision; the native destination
+objects are retained directly. Stale replies and navigation are retired with
+the effect. The production widget does not import the tour. A named alias of
+VIR's loader gives the two local panels distinct infoview identities while
+sharing the same JavaScript source. Reusing the same module name caused React
+key collisions in infoview 0.13; the browser gate caught them.
+
+The real VS Code gate passes **17/17**: the prior thirteen checks plus Next,
+Prev, manual step sync (including dimmed between-step text and final feedback),
+and navigation after an unsaved line insertion. It verifies the editor's actual
+URI/line/character, not just a callback. The original DOM-identity/collapse tests
+still pass. Resource comparisons now precede the current-state body; the
+SpinLock checks verify that ordering. This moves the useful rows earlier, but
+does not guarantee they fit above the fold beneath a long normal Tactic state.
+
+Validation on 2026-11-04: focused Lake build including `WidgetTour.Test`, both VIR
+packages and RPC fixtures; `lake test`; runtime package verification; browser
+gate at light 360px/14px, dark 320px/22px with 500ms package delay, and high
+contrast 280px/28px. The browser gate checks the same tour navigation, neutral
+initial state, panel order and unsaved line insertion. No React key warning
+remains. The real-host evidence is
+`.tmp/vscode-e2e-runs/2026-11-04T19-56-11-776Z/`; other logs and screenshots are
+under `.tmp/round-c/`.
+The separate `--demo` probe also traverses all eight steps and back, checking
+that reveal updates the source highlight and proof-position selector.
+
+Two test synchronization failures are retained there. The delayed-package
+browser run first moved before the initial tour was ready; the gate now checks
+that neutral initial state before moving. A VS Code run passed 16/17 but the
+native-definition round trip left the entire infoview at the previous cursor
+position. The test now waits for the infoview to follow both file changes before
+issuing the next cursor move, in addition to checking the actual editor. This
+is test synchronization, not a production workaround or an upstream fix claim.
+Tour button input in the VS Code gate is synthetic DOM activation; physical
+keyboard navigation and full accessibility remain outside this acceptance.
+
 ## Tactic-local resource prototype (Round B)
 
 `IrisTest.ProofMode.GoalChanges` has no widget/VIR import. Complete Heap and SpinLock
