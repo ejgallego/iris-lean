@@ -51,6 +51,13 @@ its proof-mode state into a flat goal display:
 ⊢ target proposition
 ```
 
+This repository's `Display.lean` output is the comparison baseline for notation
+and resource conventions. The `∗` hypothesis prefix is already an iris-lean
+convention. Rocq Iris's `────□` / `────∗` separator layout is optional design
+inspiration, not a convention this widget must restore. The current widget's
+missing `:` between hypothesis name and proposition remains a notation gap;
+the comparison should preserve that distinction from the choice of layout.
+
 The information is correct, but the two contexts remain one visual block. As
 the number and size of resources grows, users must repeatedly scan the leading
 symbol instead of seeing the persistent/spatial structure directly.
@@ -61,6 +68,23 @@ Relevant sources:
 - [`Iris/Iris/ProofMode/Expr.lean`](../Iris/Iris/ProofMode/Expr.lean)
 - [`Iris/IrisTest/Display.lean`](../Iris/IrisTest/Display.lean)
 - [`Iris/proofmode.md`](../Iris/proofmode.md)
+
+### Replacement remains undecided
+
+The normal infoview also shows the ordinary Lean context above this Iris
+judgment: variables, ordinary hypotheses, local definitions and instances.
+The widget's `DisplayGoal` contains only the persistent/spatial Iris hypotheses
+and target, plus display identity. It does not include that ordinary context.
+Saved local contexts support semantic inspection of displayed terms, but are
+not a visible context listing and do not cover locals absent from those terms.
+
+Replacing the normal view therefore requires both host support and a complete
+context presentation. A proposal must account for the ordinary Lean context,
+either through the target model or host-provided typed goal/context data, and
+compare the complete view on the same proof states. The native target-only
+experiment establishes neither this coverage nor replacement readiness. The
+maintainer has not chosen replacement or coexistence; no context-model or
+renderer change is implied by this requirement.
 
 ### Problem statement
 

@@ -11,6 +11,48 @@ Give a friendly 8–10 minute tour of the smallest useful VIR workflow:
 
 The point is the development model, not a finished Iris UX.
 
+## Interactive browser demo
+
+After preflight, run from the worktree root:
+
+```bash
+env LAKE_ARTIFACT_CACHE=true LAKE_CACHE_DIR=/home/egallego/.cache/mathlib LAKE_RESTORE_ARTIFACTS=true \
+  node scripts/widget-browser-smoke.mjs --demo
+```
+
+Open <http://127.0.0.1:8140/>. The default example is a real HeapLang store/read
+proof, adapted from `IrisTest/HeapLang/HeapTactics.lean`. Follow the three **Heap**
+positions:
+
+1. **Before store:** `Hl` owns `l ↦ some v`; `Hframe` owns `l' ↦ some w`.
+   The program writes `v'` to `l`, then reads `l`.
+2. **After store:** `Hl` now owns `l ↦ some v'`; `Hframe` is unchanged. The
+   remaining program is the load.
+3. **After load:** the postcondition asserts the returned value is `v'` and both
+   ownership resources remain available. `iframe` and `itrivial` finish.
+
+Inspect `l : Loc`, the mask `E : CoPset`, and the return binder `r : Val` in the
+first two targets. The last inspection uses the saved context beneath the
+postcondition binder; `r` has not been introduced as a proof variable.
+
+The two **SpinLock** positions reproduce the complete `release_spec` proof
+from `Iris/HeapLang/Lib/SpinLock.lean`. Before the store, inspect the persistent
+`Hinv`, ghost token `Hl`, protected resource `HR`, and later-protected cell
+`Hpt`. After the store, `Hpt` contains `false`; the target restores the invariant
+under its reduced mask. Inspect `l : Loc`, `γ : GName`, and the bound `b : Bool`.
+
+The original **Contexts**, **Split goals**, **Nested binders**, and **Ordinary
+Lean** positions remain available. The source panel highlights the selected
+position. Click a term or activate it with Enter. Theme, proof-font size and
+panel width controls leave an open inspection intact. `IRIS_WIDGET_PORT` changes
+the port; Ctrl+C stops the service and its Lean server.
+
+This runs the production Lean-authored widget against a real Lean server using
+the same RPC bridge as the browser tests. It supplies a small browser context
+adapter and a read-only proof-position selector, not a full editor. It does not
+include the test-only cancellation probe. See the
+[coverage map](widget-testing-surface.md) for what is and is not exercised.
+
 ## Preflight
 
 Do this before the meeting, not during it:
