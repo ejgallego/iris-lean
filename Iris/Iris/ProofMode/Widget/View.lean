@@ -67,7 +67,7 @@ def hypothesisRow : RuntimeM (Client.Component HypothesisProps) := do
     let hypothesis := props.hypothesis
     let name ← jsx%{<span><span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>
       {Html.text (kindGlyph hypothesis.kind)}</span><strong style={(← Style.hypothesisName)}>
-      {Html.text hypothesis.name}</strong></span>}
+      {Html.text hypothesis.name}</strong>{Html.text ": "}</span>}
     let value ← Client.Component.render term {
       context := props.context
       term := hypothesis.proposition
