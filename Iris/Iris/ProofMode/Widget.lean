@@ -5,6 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Iris.ProofMode.Widget.View
+-- Package capture reads View's runtime IR during elaboration. Track implementation edits.
+public meta import Iris.ProofMode.Widget.View
 public meta import Iris.ProofMode.Widget.Rpc
 public import Vir.Attributes
 public meta import Vir.Attributes

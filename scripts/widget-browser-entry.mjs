@@ -4,7 +4,12 @@ const prefix = "Iris.ProofMode.Widget.";
 let actionId = 0;
 async function action(kind, element) {
   element?.scrollIntoView({ block: "center" });
-  const rect = element?.getBoundingClientRect();
+  let rect = element?.getBoundingClientRect();
+  if (kind === "click" && element) {
+    const text = document.createTreeWalker(element, NodeFilter.SHOW_TEXT).nextNode();
+    const range = document.createRange(); range.selectNodeContents(text);
+    rect = range.getClientRects()[0];
+  }
   const id = ++actionId;
   globalThis.irisAction = { id, kind, x: rect ? rect.x + (kind === "click" ? Math.min(5, rect.width / 2) : rect.width / 2) : 0,
     y: rect ? rect.y + rect.height / 2 : 0 };
@@ -77,6 +82,8 @@ async function run() {
     });
     await move(config.contexts);
     check(cards().length === 1 && native().length > 0, "one native Iris goal");
+    check([...panel().querySelectorAll('li[role="listitem"]')].every(row =>
+      row.firstElementChild.textContent.endsWith(": ")), "hypothesis separator matches irisHyp");
     const packageCalls = () => host.calls.filter(c => c.method === "Lean.Vir.Infoview.buildIRPackage").length;
     const startupPackages = packageCalls();
     const snapshot = await host.snapshot(config.contexts), payload = JSON.parse(snapshot.display);
