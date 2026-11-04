@@ -197,6 +197,9 @@ def goalCard : RuntimeM (Client.Component GoalProps) := do
       aria-expanded={(← JsValue.ofBool expanded)} aria-controls={contentId} onClick={toggle}
       style={(← Style.collapseButton)}>{Html.text (if expanded then "−" else "+")}</button></header>}
     let mut children : Array (Js Node) := #[]
+    if let some comparison := goal.comparison? then
+      children := children.push (← Client.Component.render changesView { comparison, context := props.context }
+        (some (← js#"comparison")))
     if !goal.persistent.isEmpty then
       children := children.push (← Client.Component.render contextView {
         context := props.context
@@ -209,9 +212,6 @@ def goalCard : RuntimeM (Client.Component GoalProps) := do
       } (some (← js#"spatial")))
     children := children.push (← Client.Component.render targetView { term := goal.target, context := props.context }
       (some (← js#"target")))
-    if let some comparison := goal.comparison? then
-      children := children.push (← Client.Component.render changesView { comparison, context := props.context }
-        (some (← js#"comparison")))
     let contents : Js.Array Node ← if expanded then
       let nativeChildren : Js.Array Node ← Js.Array.ofArray children
       Js.Array.ofArray #[← jsx%{<div key="content" id={contentId} style={(← Style.goalContent)}>{nativeChildren}</div>}]
