@@ -13,7 +13,8 @@ metadata JSON. Each hypothesis proposition and the target uses upstream
 `InteractiveCode`; custom per-leaf buttons and the inline inspector are gone.
 The normal Tactic state remains visible. The browser/demo hosts now use actual
 upstream infoview providers, with bundled widget-source substitution and an
-editor API bridge. The first installed-VS-Code check remains with the maintainer.
+editor API bridge. A separate real VS Code acceptance run now passes as well;
+its scope is recorded below.
 
 The final light/360px/14px, dark/320px/22px with 500 ms package delay, and
 high-contrast/280px/28px runs pass (421 host RPC calls each, including injected
@@ -70,6 +71,44 @@ Earlier failing probes are retained. The downstream fixture was rerun against
 this code in `.tmp/widget-downstream-nYFncg/result.json`: registration/state/package
 pass; missing runtime installation and the matching donor control behave as
 recorded below. Packaging placement is unchanged.
+
+## Real VS Code acceptance follow-up (2026-11-04)
+
+The isolated headless VS Code harness using the installed
+`leanprover.lean4 0.0.240` passes **11/11 checks** against the production checkpoint
+`81472c77`. It uses its own Xvfb display/profile and the actual infoview webview,
+without substituting the widget source or its context providers. It never saves
+the typing edit and reverts the buffer on exit. No production code changed in
+this follow-up.
+
+Checks cover Heap store/load and postcondition; the `: ` separator; `l : Loc`
+hover; actual native definition navigation opening `Init/Prelude.lean` at line
+3058; both distinct SpinLock states; empty ordinary goals; two split cards;
+collapse and card DOM identity across cursor movement **and typing**. The
+navigation check reads the active editor's URI/position, not just a callback.
+Hover and Ctrl-click are synthetic DOM input inside the real webview; this does
+not establish physical-pointer, keyboard-policy or screen-reader acceptance.
+
+The store check also records Tactic state's existing diff spans. They mark
+`l`, `v`, `l'`, `w` and the program in this state, even though the frame
+proposition remains unchanged. The [resource-change proposal](widget-resource-changes.md)
+now evaluates possible resource-level value beyond that built-in expression diff.
+
+Run locally, with no concurrent Lake build:
+
+```bash
+TMPDIR="$PWD/.tmp" node .tmp/vscode-e2e/widget-vscode.test.mjs
+```
+
+The harness remains git-excluded for its author's separate commit; it is not yet
+a shipped test entrypoint. This run's results, temporary profile, VS Code log and
+screenshots are under
+`.tmp/vscode-e2e-runs/2026-11-04T14-24-42-026Z/`. Its original nine-check predecessor
+is retained in `.tmp/vscode-e2e/runs/2026-11-04T14-02-49-717Z/`.
+The added definition-navigation round trip included a roughly 47-second wait
+before the Heap postcondition became ready; this is not a latency benchmark or
+an attribution to widget rendering. Full editor focus/scroll, restart recovery,
+long-session reference release and accessibility remain open.
 
 ## Pre-migration coverage map (historical)
 

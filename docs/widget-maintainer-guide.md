@@ -121,7 +121,9 @@ loading shell; it does not test effects or RPC. See the exact commands and
 recorded results in [the testing surface](widget-testing-surface.md). The older
 [4.32 migration note](widget-native-rpc.md) is historical.
 
-Remaining acceptance work includes manual VS Code/theme/screen-reader checks,
+The isolated real VS Code harness passes native hover/definition navigation,
+Heap/SpinLock content and cursor/edit card continuity (see the testing surface).
+Remaining acceptance work includes broader manual theme/screen-reader checks,
 server restart, expired-reference cases and long-session reference release.
 RPC errors now retain native messages and codes until display, and the browser
 suite checks errors, cancellation and absence of React key warnings. A

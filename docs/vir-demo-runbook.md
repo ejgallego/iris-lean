@@ -24,8 +24,10 @@ code Iris
 If dependencies/runtime have not been installed, use the attendee setup below
 first. Keep the Lean server warm. The installed extension is
 `leanprover.lean4` **0.0.240**, whose `@leanprover/infoview ~0.13.0` dependency
-matches VIR's 0.13.0 pin. The first check in the actual VS Code extension belongs
-to the maintainer; the automated browser host is not that check.
+matches VIR's 0.13.0 pin. The isolated real VS Code acceptance now passes,
+including native hover/navigation and cursor/edit continuity. Still do a short
+presenter preflight in the window used for the meeting; the standalone browser
+host and the real VS Code harness are separate checks.
 
 Open `IrisTest/ProofMode/WidgetDemo.lean`. For each marker below, put the cursor
 at the **first non-space character of the following tactic line** (its before
@@ -43,7 +45,9 @@ state). Keep both Tactic state and the Iris panel visible.
    `Hl` is now `l ↦ some v'`; `Hframe` is unchanged. At
    `widget-position-heap-post`, the WP has become the postcondition, including
    `⌜v' = v'⌝` and ownership of both cells. Explain that these are real snapshots;
-   the widget does not yet compute or highlight a resource delta.
+   the widget does not yet compute a resource delta. Point out that Tactic state
+   already highlights upcoming expression changes; the proposed addition would
+   be explicit resource correspondence with both states visible.
 3. **An opened invariant, 4–6 minutes.** At `widget-position-spin-open`, show
    persistent `Hinv`, `Hl : locked γ`, `HR : R`, and
    `Hpt : ▷ l ↦ some hl_val(#b)`. At `widget-position-spin-stored`, `Hpt` contains

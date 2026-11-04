@@ -1,6 +1,6 @@
 # Iris Proof-Mode Widget Design
 
-- Status: native-term companion prototype; Round A browser checks, first real VS Code check pending
+- Status: native-term companion prototype; Round A browser checks and isolated real VS Code acceptance passed
 - Task id: `proof-mode-widget`
 - Branch: `feat/proof-mode-widget`
 - Updated: 2026-11-04 (earlier design history retained)
