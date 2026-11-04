@@ -1,6 +1,8 @@
 # Proposal: compare Iris resources across proof steps
 
-**Design only; maintainer decision required.** Keep this beside Tactic state.
+**Round B: a bounded tactic-local demo prototype is now implemented.** The Iris
+authors’ feedback will decide whether this becomes a feature. Pinning and token
+diff mapping below remain proposals. Keep this beside Tactic state.
 Lean's built-in diff already covers much of “what changed in this expression?”
 A second coloured term diff adds little; keeping the widget without resource
 history is a valid outcome.
@@ -68,5 +70,13 @@ Retain only the selected comparison; release it on replacement/unmount. Never mi
 elaboration generations. Before-state text can remain noninteractive until its
 original RPC/position context is supported; never borrow current-goal paths.
 
-Decision: would tactic-local resource comparison add enough beyond Tactic state's
-diff to build? No history, diff mapping or resource-status code is added here.
+The prototype uses `FileWorker.findGoalsAt?`, the same tactic selection as Tactic
+state, and assignment reachability from `mctxAfter` for goal ancestry. It compares
+instantiated proposition Exprs under the two saved contexts, pairs only `IVarId`,
+and refuses ambiguous ancestry, duplicate IDs or changed shared local bindings.
+All branches remain visible; a closed goal is labelled closed. Existing goal
+cards stay intact with an additional after-resource section. New terms are native;
+old terms are plain text. No pinning, target diff or path rebasing is implemented.
+
+Feedback question: does this resource comparison add enough beyond Tactic state's
+diff to retain and refine?

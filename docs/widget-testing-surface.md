@@ -1,5 +1,38 @@
 # Widget testing and use-case surface
 
+## Tactic-local resource prototype (Round B)
+
+`IrisTest.ProofMode.GoalChanges` has no widget/VIR import. Complete Heap and SpinLock
+proofs assert statuses using saved before/after contexts: store changes the owned
+cell and preserves the frame; load preserves both; SpinLock store changes Hpt and
+Hcond while preserving Hinv/Hl/HR/Hcont; framing removes Hpt. Additional cases
+cover introduced resources, a two-result split, closure (no removal claims),
+renaming versus fresh IDs, duplicate IDs, changed local bindings and ambiguous
+predecessors. Names label test expectations, never resource correspondence.
+
+The browser gate checks production `findGoalsAt?` selection, all split outcomes,
+Heap/SpinLock statuses and both proposition sides, native hover on a new-side term,
+resource removal at `spin-frame`, and the unchanged ordinary view in a comment.
+It retains held-response/stale-action, collapse, edit, failure and outside-Iris
+checks. The real VS Code gate adds Heap store and SpinLock store comparisons to
+its existing eleven checks. All terms in the after-view use the same snapshot
+lease as the current view; old-side terms deliberately remain plain text.
+
+`spin-stored` still selects `imodintro`, not the following frame operation.
+`spin-frame` is an additional exact cursor position at `iframe Hpt`. Hcond loses
+its later modality at the store; it is not removed there. These are structural
+Expr comparisons, not semantic equivalence, consumption or framing analyses.
+
+Validation on 2026-11-04: focused Lake build and `lake test`; runtime package
+verification; browser gate at 360px/14px light, 320px/22px dark with a 500ms package
+delay, and 280px/28px high contrast; real VS Code **13/13**. Browser checks include
+after-side branching and a closed-goal cursor position. The final real-host run
+is `.tmp/vscode-e2e-runs/2026-11-04T17-08-39-719Z/`; other retained logs and the dark
+Heap screenshot are under `.tmp/round-b/`. No change to toolchain, VIR pin,
+runtime installation, packaging or CI.
+
+
+
 Current prototype: Lean 4.35 / VIR `81de859a`, with native `InteractiveCode`
 terms beside the normal Tactic state. The pre-migration experiments below are
 historical evidence, not claims about the current renderer. The live demo is served by

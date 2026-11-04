@@ -2,7 +2,8 @@
 
 This prototype stays **beside the normal Tactic state**. It groups Iris resources
 and uses upstream `InteractiveCode` for propositions and the target. It does not
-replace the ordinary Lean context or yet show changes between steps automatically.
+replace the ordinary Lean context. A demo prototype compares resources before and
+after the tactic under the cursor.
 The meeting is for feedback on what an Iris-specific view could add.
 
 ## Presenter setup — before the meeting
@@ -41,19 +42,25 @@ state). Keep both Tactic state and the Iris panel visible.
    `r`: native popups report `Loc`, `CoPset`, and `Val`. Ctrl/Cmd-click `some`
    in a hypothesis to try native go-to-definition. The normal view still gives
    the complete Lean context.
-2. **Follow the store and load, 2–4 minutes.** At `widget-position-heap-load`,
-   `Hl` is now `l ↦ some v'`; `Hframe` is unchanged. At
-   `widget-position-heap-post`, the WP has become the postcondition, including
-   `⌜v' = v'⌝` and ownership of both cells. Explain that these are real snapshots;
-   the widget does not yet compute a resource delta. Point out that Tactic state
-   already highlights upcoming expression changes; the proposed addition would
-   be explicit resource correspondence with both states visible.
+2. **One tactic, two resource states, 2–4 minutes.** Stay at
+   `widget-position-heap-store`: under the current goal, **After wp_store · resources**
+   shows `Hl` changed to `l ↦ some v'`, with `was: l ↦ some v`, while `Hframe`
+   is marked preserved. The new terms have native hover too. This adds named
+   resource correspondence beside Lean's existing expression diff; it does not
+   infer that a preserved resource was framed. Move to `widget-position-heap-load`:
+   `wp_load` preserves both resources. At `widget-position-heap-post`, the current
+   WP has become the postcondition, including `⌜v' = v'⌝` and both cells.
 3. **An opened invariant, 4–6 minutes.** At `widget-position-spin-open`, show
    persistent `Hinv`, `Hl : locked γ`, `HR : R`, and
    `Hpt : ▷ l ↦ some hl_val(#b)`. At `widget-position-spin-stored`, `Hpt` contains
    `false` and loses the later; `Hcond` also loses its later. The target is the
    update that closes the invariant under the reduced mask. Hover over `γ` or
-   `b` for their native context. This is the complete `SpinLock.release_spec`.
+   `b` for their native context. At the store, the comparison marks `Hpt` and
+   `Hcond` changed (both lose `▷`), and `Hinv`, `Hl`, `HR`, `Hcont` preserved.
+   Optional: `widget-position-spin-frame` selects `iframe Hpt` and lists `Hpt`
+   as removed from the resulting goal. “Removed” does not mean “consumed”.
+   The existing `spin-stored` marker selects `imodintro`, which preserves all
+   resources. This is the complete `SpinLock.release_spec`.
 4. **How VIR is used, 6–8 minutes.** Show the local `show_panel_widgets` line in
    the demo, `vir_proof_widget View.app` in `Iris/ProofMode/Widget.lean`, and
    `hypothesisRow` in `Widget/View.lean`. React components are authored in Lean;
@@ -72,7 +79,7 @@ provides familiar interactions while the resource view develops.
 
 Today this is a development branch, not a released extension or installable
 optional Iris widget package. Obtain the **demo checkpoint from the maintainer**
-(the Round A commits are local until separately published). Install Git, VS Code
+(the demo commits are local until separately published). Install Git, VS Code
 with the Lean 4 extension, `elan` (which installs the pinned Lean **4.35.0**),
 and Node.js/npm. Our checked host uses Node **24**. A first setup needs network
 access for Lean, Lake/npm dependencies and the pinned VIR runtime pack.
@@ -122,7 +129,7 @@ providers and the production widget. Native navigation reaches an editor callbac
 but the browser host does not open a Lean source editor.
 
 For the automated gate, build `IrisTest.ProofMode.Widget` and
-`IrisTest.ProofMode.WidgetRpc` as well, then run `lake test`,
+`IrisTest.ProofMode.WidgetRpc` and `IrisTest.ProofMode.GoalChanges` as well, then run `lake test`,
 `node scripts/widget-runtime-smoke.mjs`, and `node scripts/widget-browser-smoke.mjs`
 (the Node commands run from the checkout root). Chromium is needed only for the
 browser regression. See [coverage and limits](widget-testing-surface.md).
@@ -145,7 +152,7 @@ It complements the presenter's manual run-through before the meeting.
 ## Questions for the Iris authors
 
 - When does this resource grouping help alongside the normal Tactic state?
-- Would resource changes before/after the tactic under the cursor explain a useful
+- Does this prototype of resource changes before/after the tactic explain a useful
   proof step? Would comparing more distant states justify explicit pinning?
   Which changes matter most: ownership, modalities, masks, or invariant state?
 - What is the next representative proof: lock acquisition/CAS, fractional
