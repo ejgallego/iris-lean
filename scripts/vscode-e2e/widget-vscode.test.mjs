@@ -81,6 +81,22 @@ try {
     const marker = await vs.driver({ op: 'find', marker: 'widget-position-spin-stored', offset: 0 });
     await vs.driver({ op: 'cursor', ...marker });
     await vs.until('dimmed preceding step', async () => { const t = await tour(); return t?.index === '3' && t.exact === 'false' && t.busy === 'false'; }, 30000);
+    await tourClick('prev'); await tourAt(3);
+    const expected = await vs.driver({ op: 'find', marker: 'widget-position-spin-open' });
+    const actual = await vs.driver({ op: 'activeEditor' });
+    assert(actual.line === expected.line && actual.character === expected.character, 'Prev skipped the dimmed SpinLock step');
+
+    // The first step must also remain reachable with Prev while it is dimmed.
+    const betweenFirst = await vs.driver({ op: 'find', marker: 'widget-position-heap-load', offset: 0 });
+    await vs.driver({ op: 'cursor', ...betweenFirst });
+    await vs.until('dimmed first step', async () => {
+      const t = await tour(); return t?.index === '0' && t.exact === 'false' && t.busy === 'false' && !t.prevDisabled;
+    }, 30000);
+    await tourClick('prev'); const first = await tourAt(0);
+    const firstExpected = await vs.driver({ op: 'find', marker: 'widget-position-heap-store' });
+    const firstActual = await vs.driver({ op: 'activeEditor' });
+    assert(firstActual.line === firstExpected.line && firstActual.character === firstExpected.character && first.prevDisabled,
+      'Prev should reach the first step and then become disabled');
     await at('widget-position-how-vir'); const vir = await tourAt(6);
     assert(vir.text.includes('React components authored in Lean'), 'VIR explanation missing');
     await at('widget-position-feedback'); const feedback = await tourAt(7);

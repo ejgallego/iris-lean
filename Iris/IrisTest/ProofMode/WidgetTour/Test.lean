@@ -25,3 +25,11 @@ def source := String.intercalate "\n" <|
 -- The nearest preceding source position, even if the authored step order differs.
 #guard (select #[{ line := 9, character := 0 }, { line := 5, character := 0 }]
   { line := 10, character := 0 }).index == some 0
+
+-- Prev returns to a dimmed step, including the first; it only goes back from an exact step.
+def positions : Array Position := #[{ line := 5, character := 2 }, { line := 10, character := 2 }]
+#guard (select positions { line := 0, character := 0 }).previous? == none
+#guard (select positions { line := 5, character := 2 }).previous? == none
+#guard (select positions { line := 7, character := 0 }).previous? == some 0
+#guard (select positions { line := 10, character := 2 }).previous? == some 0
+#guard (select positions { line := 11, character := 0 }).previous? == some 1

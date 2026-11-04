@@ -142,7 +142,9 @@ def app : RuntimeM (FunctionComponent PanelWidgetProps) := do
       let pending ← EditorConnection.revealPosition connection destination
       Client.observe loaded.active pending (fun _ => pure ())
         (fun _ => state.set { state.value with error := some "Could not reveal the tour step in the editor." })
-    let prev ← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => navigate (index.getD 0 - 1)
+    let previous := selection.previous?
+    let prev ← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => do
+      if let some index := previous then navigate index
     let next ← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => navigate (index.map (· + 1) |>.getD 0)
     let count := index.map (fun i => s!"Step {i + 1} of {steps.size}") |>.getD s!"Tour · {steps.size} steps"
     let content ← if let some i := index then do
@@ -156,7 +158,7 @@ def app : RuntimeM (FunctionComponent PanelWidgetProps) := do
     return ← jsx%{<aside data-iris-widget-tour="true" data-tour-step={(← JsValue.ofString (index.map toString |>.getD "none"))}
       data-tour-exact={(← JsValue.ofBool exact)} aria-label="Iris demo tour" aria-busy={(← JsValue.ofBool (!ready && state.value.error.isNone))}
       style={(← panelStyle exact)}><div><span>{Html.text count}</span>{Html.text " "}
-        <button type="button" data-tour-prev="true" disabled={(← JsValue.ofBool (!ready || index.getD 0 == 0))} onClick={prev}>Prev</button>
+        <button type="button" data-tour-prev="true" disabled={(← JsValue.ofBool (!ready || previous.isNone))} onClick={prev}>Prev</button>
         {Html.text " "}<button type="button" data-tour-next="true" disabled={(← JsValue.ofBool (!ready || index.any (· + 1 ≥ steps.size)))} onClick={next}>Next</button>
         {Html.text (if ready && index.isSome && !exact then " · between steps" else "")}</div>{content}{error}</aside>}
 

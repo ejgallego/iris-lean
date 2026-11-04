@@ -23,8 +23,10 @@ follow the **Iris demo tour** above the Iris card. **Next** and **Prev** move th
 real editor cursor; the talking points and hover suggestions follow it. Allow
 about ten minutes. A manual jump onto a step's code line selects that step;
 between steps the nearest preceding step is dimmed. Before the first step,
-Next starts the tour. Navigation targets the first non-space character on the
-line following each marker, preserving the intended before-tactic state.
+Next starts the tour. When a step is dimmed, Prev returns to that step itself;
+once on it, Prev goes to the preceding step. Navigation targets the first
+non-space character on the line following each marker, preserving the intended
+before-tactic state.
 
 The main effect is at the first store: `Hl` changes, with its old proposition
 still visible, while `Hframe` is preserved. The resource comparison appears

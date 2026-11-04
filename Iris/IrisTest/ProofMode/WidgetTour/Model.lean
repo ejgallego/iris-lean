@@ -76,6 +76,14 @@ structure Selection where
   exact : Bool := false
   deriving ToJson, FromJson
 
+/-- Between steps, Prev returns to the displayed step before going further back. -/
+def Selection.previous? (selection : Selection) : Option Nat :=
+  match selection.index, selection.exact with
+  | none, _ => none
+  | some 0, true => none
+  | some (i + 1), true => some i
+  | some i, false => some i
+
 /-- Select by source position, not by the order in which the user visited steps. -/
 def select (positions : Array Position) (cursor : Position) : Selection := Id.run do
   let mut selected : Selection := {}
