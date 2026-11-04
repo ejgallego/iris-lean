@@ -12,6 +12,8 @@ const positions = [
   ["spinOpen", "SpinLock · 1. Open invariant", "Inside release_spec: Hinv is persistent. Hpt owns the lock cell, Hcond records its old state, and Hl/HR supply the ghost token and protected resource. The target stores false under a reduced mask."],
   ["spinStored", "SpinLock · 2. After store", "Hpt now owns the unlocked cell. The target restores the invariant and mask before returning to the caller's continuation; Hl and HR are needed to close the invariant."],
   ["spinFrame", "SpinLock · 3. Frame the cell", "At iframe Hpt: the after-view lists Hpt as removed from this goal. This describes the context change, not a claim that the cell was consumed."],
+  ["tourHow", "Tour · How VIR is used", "The tour and proof view are Lean-authored VIR components."],
+  ["tourFeedback", "Tour · Feedback", "The final tour step contains the questions for the Iris authors."],
   ["contexts", "Contexts", "Two persistent resources, two spatial resources, and the target."],
   ["split", "Split goals", "Expand the second goal. Hover over the shared P in each goal independently."],
   ["binders", "Nested binders", "Hover over n and m before introduction; their types come from saved binder contexts."],
@@ -66,7 +68,10 @@ function Demo() {
     document.documentElement.style.setProperty("--vscode-editor-font-size", `${fontSize}px`);
   }, [theme, fontSize]);
   React.useEffect(() => {
-    const pending = createHost(mountRef.current, config);
+    const pending = createHost(mountRef.current, config, { onReveal: position => {
+      const step = positions.find(([name]) => config[name].line === position.line && config[name].character === position.character);
+      if (step) setSelected(step[0]);
+    } });
     hostRef.current = pending;
     pending.catch(error => setError(error.message ?? String(error)));
     return () => { void pending.then(host => host.close()); };

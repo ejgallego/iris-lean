@@ -18,10 +18,10 @@ export async function until(label, predicate) {
   while (performance.now() < deadline) { if (await predicate()) return; await pause(10); }
   throw new Error(`${label}: timed out; DOM=${document.body.textContent.slice(-4000)}`);
 }
-export async function createHost(container, config, { intercept, panelProps = props => props } = {}) {
+export async function createHost(container, config, { intercept, panelProps = props => props, onReveal } = {}) {
   const calls = [], navigations = [], errors = [], sessions = new Set(), notifications = new Set();
   const widgetHashes = new Set(), subscriptions = new Set();
-  let requestId = 0;
+  let requestId = 0, cursor = config.ordinary;
   const report = event => errors.push(String(event.error?.stack ?? event.reason ?? event.message));
   addEventListener("error", report); addEventListener("unhandledrejection", report);
   const notify = (path, params) => {
@@ -30,8 +30,8 @@ export async function createHost(container, config, { intercept, panelProps = pr
     return task;
   };
   // Stable component identity: changing position does not unmount the panel.
-  globalThis.irisHarnessPanel = props => React.createElement("div", { "data-iris-test-panel": true },
-    React.createElement(VirInfoviewWidget, panelProps(props)));
+  globalThis.irisHarnessPanel = props => React.createElement("div", { "data-iris-test-panel": props.irPackage.entry },
+    React.createElement(VirInfoviewWidget, props.irPackage.entry === "Iris.ProofMode.Widget.createComponent" ? panelProps(props) : props));
   const call = async (params, options) => {
     const record = { ...params, id: ++requestId, hasSignal: Boolean(options?.abortSignal), cancelled: false };
     calls.push(record);
@@ -44,7 +44,7 @@ export async function createHost(container, config, { intercept, panelProps = pr
       const value = await post("/call", { id: record.id, params: next });
       if (next.method === "Lean.Widget.getWidgets") {
         for (const widget of value.widgets)
-          if (widget.props.irPackage?.entry === "Iris.ProofMode.Widget.createComponent") widgetHashes.add(String(widget.javascriptHash));
+          if (["Iris.ProofMode.Widget.createComponent", "IrisTest.ProofMode.WidgetTour.createComponent"].includes(widget.props.irPackage?.entry)) widgetHashes.add(String(widget.javascriptHash));
       }
       if (next.method === "Lean.Vir.Infoview.buildIRPackage" && config.packageDelayMs) await pause(config.packageDelayMs);
       return value;
@@ -63,7 +63,16 @@ export async function createHost(container, config, { intercept, panelProps = pr
     async sendClientNotification(_uri, method, params) { if (method === "$/lean/rpc/release") await notify("/release", params); },
     async subscribeServerNotifications(method) { subscriptions.add(method); }, async unsubscribeServerNotifications() {},
     async subscribeClientNotifications() {}, async unsubscribeClientNotifications() {},
-    async copyToClipboard() {}, async saveConfig() {}, async showDocument(params) { navigations.push(params); },
+    async copyToClipboard() {}, async saveConfig() {}, async showDocument(params) {
+      navigations.push(params);
+      // Emulate the editor's normal cursor notification after same-document reveal.
+      // Cross-document definition navigation remains an observed callback in this host.
+      if (params.uri === config.uri && params.selection) {
+        cursor = params.selection.start;
+        await infoview.changedCursorLocation({ uri: config.uri, range: params.selection });
+        await onReveal?.(cursor);
+      }
+    },
   };
   const infoview = renderInfoview(api, container);
   await until("infoview providers", () => subscriptions.has("$/lean/fileProgress"));
@@ -73,8 +82,10 @@ export async function createHost(container, config, { intercept, panelProps = pr
   await until("initial ordinary goal", () => container.textContent.includes("Tactic state"));
   return {
     calls, navigations, errors, infoview,
-    panel: () => container.querySelector('[data-iris-test-panel]'),
+    panel: () => container.querySelector('[data-iris-test-panel="Iris.ProofMode.Widget.createComponent"]'),
+    cursor: () => cursor,
     async move(position) {
+      cursor = position;
       await infoview.changedCursorLocation({ uri: config.uri, range: { start: position, end: position } });
     },
     async edit(change) { await infoview.sentClientNotification("textDocument/didChange", change); },

@@ -1,5 +1,6 @@
 // Real Iris server + official RPC client + actual VIR shell and Lean-authored UI.
-// Run after lake build IrisTest.ProofMode.WidgetDemo +Iris.ProofMode.Widget:vir.
+// Run after lake build IrisTest.ProofMode.WidgetDemo IrisTest.ProofMode.WidgetRpc
+//   +Iris.ProofMode.Widget:vir +IrisTest.ProofMode.WidgetTour:vir.
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
@@ -114,6 +115,8 @@ await withCleanup(async () => {
     spinOpen: position("widget-position-spin-open"),
     spinStored: position("widget-position-spin-stored"),
     spinFrame: position("widget-position-spin-frame"),
+    tourHow: position("widget-position-how-vir"),
+    tourFeedback: position("widget-position-feedback"),
     ...(demo ? { source } : {}),
   };
   assert.ok(Number.isFinite(config.width) && config.width >= 200);
@@ -158,8 +161,9 @@ await withCleanup(async () => {
       } else if (req.url === "/edit") {
         if (demo) { res.writeHead(404); res.end(); return; }
         const kind = body.kind ?? "rename";
-        assert.ok(["rename", "type", "allocate"].includes(kind));
-        let text = kind === "rename" ? currentSource.replaceAll(/\bS\b/g, "T") :
+        assert.ok(["rename", "type", "allocate", "tourShift"].includes(kind));
+        let text = kind === "tourShift" ? currentSource.replace("  -- widget-position-heap-store", "\n  -- widget-position-heap-store") :
+          kind === "rename" ? currentSource.replaceAll(/\bS\b/g, "T") :
           currentSource.replace("-- widget-position-split", "-- widget-position-split ");
         if (kind === "allocate") text = text.replace("  iintro ⟨#HP, #HQR⟩ HQ HS",
           "  have _widgetPadding : True := True.intro; iintro ⟨#HP, #HQR⟩ HQ HS");

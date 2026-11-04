@@ -44,6 +44,50 @@ try {
   vs = await launch({ workspace: iris });
   await vs.driver({ op: 'open', file });
 
+  const tour = () => infoviewEval(vs, `(() => {
+    const t = document.querySelector('[data-iris-widget-tour]');
+    if (!t) return undefined;
+    return { index: t.dataset.tourStep, exact: t.dataset.tourExact, busy: t.getAttribute('aria-busy'), text: t.innerText,
+      prevDisabled: t.querySelector('[data-tour-prev]').disabled, nextDisabled: t.querySelector('[data-tour-next]').disabled };
+  })()`);
+  const tourAt = index => vs.until(`tour step ${index}`, async () => {
+    const t = await tour(); return t?.index === String(index) && t.exact === 'true' && t.busy === 'false' ? t : undefined;
+  }, 90000, 500);
+  const tourClick = direction => infoviewEval(vs, `(() => {
+    document.querySelector('[data-tour-${direction}]').click(); return true;
+  })()`);
+
+  await check('tour Next moves the real editor cursor', async () => {
+    await at('widget-position-heap-store'); await tourAt(0);
+    const expected = await vs.driver({ op: 'find', marker: 'widget-position-heap-load' });
+    await tourClick('next'); const t = await tourAt(1);
+    const actual = await vs.driver({ op: 'activeEditor' });
+    assert(actual.uri.endsWith('/WidgetDemo.lean') && actual.line === expected.line && actual.character === expected.character,
+      `Next cursor mismatch: ${JSON.stringify(actual)}`);
+    assert(t.text.includes('Read the value back') && t.text.includes('Step 2 of 8'), 'step text did not change');
+    return { actual, text: t.text };
+  });
+  await check('tour Prev returns to the preceding step', async () => {
+    const expected = await vs.driver({ op: 'find', marker: 'widget-position-heap-store' });
+    await tourClick('prev'); const t = await tourAt(0);
+    const actual = await vs.driver({ op: 'activeEditor' });
+    assert(actual.line === expected.line && actual.character === expected.character, 'Prev cursor mismatch');
+    assert(t.prevDisabled && t.text.includes('A store changes one resource'), 'first-step state');
+    return { actual, text: t.text };
+  });
+  await check('tour follows manual cursor movement and reaches feedback', async () => {
+    await at('widget-position-spin-open'); const spin = await tourAt(3);
+    assert(spin.text.includes('opened invariant'), 'manual cursor did not select SpinLock');
+    const marker = await vs.driver({ op: 'find', marker: 'widget-position-spin-stored', offset: 0 });
+    await vs.driver({ op: 'cursor', ...marker });
+    await vs.until('dimmed preceding step', async () => { const t = await tour(); return t?.index === '3' && t.exact === 'false' && t.busy === 'false'; }, 30000);
+    await at('widget-position-how-vir'); const vir = await tourAt(6);
+    assert(vir.text.includes('React components authored in Lean'), 'VIR explanation missing');
+    await at('widget-position-feedback'); const feedback = await tourAt(7);
+    assert(feedback.nextDisabled && feedback.text.includes('which real proof'), 'feedback should finish the tour');
+    return { spin: spin.text, feedback: feedback.text };
+  });
+
   await check('heap store: contexts and target', async () => {
     await at('widget-position-heap-store');
     const w = await waitWidget('heap store widget', w => w.present && w.text.includes('Hframe'), 240000);
@@ -110,8 +154,17 @@ try {
         return editor?.uri.endsWith('/Init/Prelude.lean') ? editor : undefined;
       }, 20000, 500);
       assert(!destination.isDirty, 'definition navigation dirtied the source');
+      // The editor can arrive before the infoview receives its cursor event.
+      // Observe both hosts before returning, so the next move cannot overtake it.
+      await vs.until('infoview follows the definition file', () => infoviewEval(vs,
+        `/Prelude\\.lean:\\d+/.test(document.body.innerText)`), 90000, 500);
       return { destination, input: 'synthetic Ctrl-click in the real webview; actual editor destination checked' };
-    } finally { await vs.driver({ op: 'open', file }); }
+    } finally {
+      await vs.driver({ op: 'open', file });
+      await vs.until('infoview returns to the demo file', () => infoviewEval(vs,
+        `/WidgetDemo\\.lean:\\d+/.test(document.body.innerText)`), 90000, 500);
+      await tourAt(0);
+    }
   });
 
   await check('heap postcondition retains both owned cells', async () => {
@@ -131,6 +184,11 @@ try {
         w.tactics.includes(marker.endsWith('open') ? 'wp_store' : 'imodintro'));
       for (const term of ['locked γ', 'HR:', 'Hcond:', 'spinlockN']) assert(w.text.includes(term), `missing ${term}`);
       assert(w.termButtons === 0, 'custom term buttons remain');
+      const comparisonFirst = await infoviewEval(vs, `(() => {
+        const card = document.querySelector('[data-iris-proof-mode-widget] article');
+        return card?.querySelector('header + div')?.firstElementChild?.hasAttribute('data-before-goal-id');
+      })()`);
+      assert(comparisonFirst, 'resource comparison should precede the current-state body');
       return { termButtons: w.termButtons, text: w.text };
     });
 
@@ -189,6 +247,18 @@ try {
     assert(w.cards[0].expanded === 'false', 'collapse lost after typing');
     assert(w.cards.every((c, i) => c.marked === 'card' + i), `cards remounted after typing: ${JSON.stringify(w.cards)}`);
     return { cards: w.cards };
+  });
+  await check('tour re-resolves markers after an unsaved line insertion', async () => {
+    const marker = await vs.driver({ op: 'find', marker: 'widget-position-heap-store', offset: 0 });
+    await vs.driver({ op: 'cursor', line: marker.line, character: 0 });
+    await vs.driver({ op: 'type', text: '\n' });
+    await at('widget-position-heap-store'); await tourAt(0);
+    const expected = await vs.driver({ op: 'find', marker: 'widget-position-heap-load' });
+    await tourClick('next'); await tourAt(1);
+    const actual = await vs.driver({ op: 'activeEditor' });
+    assert(actual.isDirty && actual.line === expected.line && actual.character === expected.character,
+      `tour used a stale line number: ${JSON.stringify(actual)}`);
+    return { actual, expected };
   });
 } catch (e) {
   results.push({ name: 'harness', ok: false, error: e.message }); console.log(`FAIL harness: ${e.message}`);

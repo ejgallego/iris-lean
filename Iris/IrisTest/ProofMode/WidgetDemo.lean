@@ -8,6 +8,8 @@ import Iris.ProofMode.Widget
 public meta import Iris.ProofMode.Widget
 import Iris.ProofMode
 public meta import Iris.ProofMode
+import IrisTest.ProofMode.WidgetTour
+public meta import IrisTest.ProofMode.WidgetTour
 import Iris.HeapLang.ProofMode
 import Iris.HeapLang.Lib.SpinLock
 
@@ -15,7 +17,9 @@ namespace IrisTest.ProofMode.WidgetDemo
 
 open Iris
 
-show_panel_widgets [local Lean.Vir.Infoview.widget with Iris.ProofMode.Widget.panelProps]
+-- Instances sharing a loader are displayed last-added first: tour above goals.
+show_panel_widgets [local Lean.Vir.Infoview.widget with Iris.ProofMode.Widget.panelProps,
+  local IrisTest.ProofMode.WidgetTour.widget with IrisTest.ProofMode.WidgetTour.panelProps]
 
 /-- Outside Iris proof mode, the widget deliberately renders nothing. -/
 example (n : Nat) : n = n := by
@@ -112,5 +116,14 @@ example (γ : GName) (lk : Val) (R : IProp GF) :
   iapply Hcont; itrivial
 
 end Lock
+
+-- widget-position-how-vir
+#check Iris.ProofMode.Widget.View.app
+
+-- widget-position-feedback
+#check Iris.ProofMode.parseIrisGoal?
+
+-- Check all eight references against this complete source, including the pause points above.
+check_widget_tour
 
 end IrisTest.ProofMode.WidgetDemo

@@ -52,7 +52,8 @@ async function run() {
     await action("move", node);
     await wait(`native hover ${name} : ${expected}`, () => [...document.querySelectorAll('.tooltip')]
       .some(p => p.textContent.includes(expected)));
-    await action("move"); await pause(150);
+    await action("move");
+    await wait("native hover closes before the next pointer action", () => !document.querySelector('.tooltip-code-content'));
   };
   try {
     host = await createHost(container, config, {
@@ -80,6 +81,27 @@ async function run() {
         }
       },
     });
+    const tour = () => container.querySelector('[data-iris-widget-tour]');
+    const tourAt = async index => wait(`tour step ${index}`, () => tour()?.dataset.tourStep === String(index) &&
+      tour().dataset.tourExact === "true" && tour().getAttribute('aria-busy') === "false");
+    await wait("initial tour ready", () => tour()?.getAttribute('aria-busy') === "false");
+    check(tour().dataset.tourStep === "none", "neutral tour before the first step");
+    await move(config.heapStore); await tourAt(0);
+    check(tour().compareDocumentPosition(panel()) & Node.DOCUMENT_POSITION_FOLLOWING, "tour precedes Iris panel");
+    tour().querySelector('[data-tour-next]').click(); await tourAt(1);
+    check(host.cursor().line === config.heapLoad.line && host.cursor().character === config.heapLoad.character, "Next reveals the marker-resolved editor position");
+    check(tour().textContent.includes('Read the value back'), "Next changes talking points");
+    tour().querySelector('[data-tour-prev]').click(); await tourAt(0);
+    check(host.cursor().line === config.heapStore.line && host.cursor().character === config.heapStore.character, "Prev reveals previous step");
+    check(tour().querySelector('[data-tour-prev]').disabled, "Prev disabled at start");
+    for (const [name, index] of [["spinOpen", 3], ["tourHow", 6], ["tourFeedback", 7]]) {
+      await host.move(config[name]); await tourAt(index);
+    }
+    check(tour().querySelector('[data-tour-next]').disabled &&
+      tour().textContent.includes('which real proof'), "feedback is the final step");
+    await move({ line: config.spinOpen.line + 1, character: 4 });
+    await wait("tour between steps", () => tour()?.dataset.tourStep === "3" && tour().dataset.tourExact === "false" &&
+      tour().getAttribute('aria-busy') === "false");
     await move(config.contexts);
     check(cards().length === 1 && native().length > 0, "one native Iris goal");
     check([...panel().querySelectorAll('li[role="listitem"]')].every(row =>
@@ -249,7 +271,8 @@ async function run() {
         await hover("v'", "Val", panel().querySelector('[data-resource-name="Hl"]'));
         // Native navigation is tested at EditorApi.showDocument; VS Code opens the file in the maintainer check.
         const some = native().find(node => node.textContent.startsWith("some ")); check(some, "native constant tag");
-        await action("click", some); await wait("go to definition", () => host.navigations.length > 0);
+        const navigationsBefore = host.navigations.length;
+        await action("click", some); await wait("go to definition", () => host.navigations.length > navigationsBefore);
         check(host.navigations.at(-1).uri.endsWith("/Init/Prelude.lean"), "some navigates to Prelude");
       }
       corpus.push({ name, tags: native().length, termButtons: panel().querySelectorAll('[data-term-id] button').length,
@@ -296,6 +319,12 @@ async function run() {
     invalidFingerprint = false;
     await move(config.heapStore);
     globalThis.irisCapture = true; await until("screenshot", () => globalThis.irisCaptured);
+    const shift = await post('/edit', { kind: 'tourShift' });
+    await host.edit(shift);
+    await move({ ...config.heapStore, line: config.heapStore.line + 1 }); await tourAt(0);
+    tour().querySelector('[data-tour-next]').click(); await tourAt(1);
+    check(host.cursor().line === config.heapLoad.line + 1 && host.cursor().character === config.heapLoad.character,
+      "tour resolves the current unsaved document after line insertion");
     // Unmount cancels a pending state call; a late error cannot revive the panel.
     const unmount = arm(prefix + "state", config.binders); failure = { server: true };
     await host.move(config.binders); await wait("unmount response held", () => unmount.count > 0);
