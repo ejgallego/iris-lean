@@ -56,6 +56,7 @@ try {
     for (const s of ['Hl', 'l ↦ some v', "l' ↦ some w", 'WP', '⊢']) assert(w.text.includes(s), `missing ${s}`);
     assert(/Hl\s*:/.test(w.text), 'no ":" after hypothesis name');
     assert(w.tactic, 'normal Tactic state must remain beside the widget');
+    assert(!await infoviewEval(vs, `!!document.querySelector('[data-iris-widget-tour]')`), 'tour must be absent by default');
     assert(w.termButtons === 0, 'custom term buttons remain');
     const standardDiff = await infoviewEval(vs, `(() => [...document.querySelectorAll('.removed-text, .inserted-text')]
       .filter(e => !e.closest('[data-iris-proof-mode-widget]')).map(e => ({ text: e.textContent, classes: e.className })))()`);
@@ -345,6 +346,111 @@ try {
     assert(w.cards[0].expanded === 'false', 'collapse lost after typing');
     assert(w.cards.every((c, i) => c.marked === 'card' + i), `cards remounted after typing: ${JSON.stringify(w.cards)}`);
     return { cards: w.cards };
+  });
+
+  // All ordinary checks run on the default document first. Opt into the separate
+  // widget only in the unsaved buffer, using the same import/line as the runbook.
+  await vs.driver({ op: 'revert' });
+  const imports = await vs.driver({ op: 'find', marker: 'import Iris.HeapLang.Lib.SpinLock', offset: 0 });
+  await vs.driver({ op: 'cursor', line: imports.line, character: 0 });
+  await vs.driver({ op: 'type', text: 'public meta import IrisTest.ProofMode.WidgetTour\n' });
+  const panelLine = await vs.driver({ op: 'find', marker: 'show_panel_widgets', offset: 1 });
+  await vs.driver({ op: 'cursor', line: panelLine.line, character: 0 });
+  await vs.driver({ op: 'type', text: 'show_panel_widgets [local IrisTest.ProofMode.WidgetTour.widget with IrisTest.ProofMode.WidgetTour.panelProps]\n' });
+  const tour = () => infoviewEval(vs, `(() => {
+    const t = document.querySelector('[data-iris-widget-tour]');
+    if (!t) return undefined;
+    return { index: t.dataset.tourStep, exact: t.dataset.tourExact, busy: t.getAttribute('aria-busy'), text: t.innerText,
+      prevDisabled: t.querySelector('[data-tour-prev]').disabled, nextDisabled: t.querySelector('[data-tour-next]').disabled };
+  })()`);
+  const tourAt = index => vs.until(`tour step ${index}`, async () => {
+    const t = await tour(); return t?.index === String(index) && t.exact === 'true' && t.busy === 'false' ? t : undefined;
+  }, 90000, 500);
+  const tourClick = direction => infoviewEval(vs, `(() => {
+    document.querySelector('[data-tour-${direction}]').click(); return true;
+  })()`);
+
+  await check('tour Next moves the real editor cursor', async () => {
+    await at('widget-position-heap-store'); await tourAt(0);
+    const expected = await vs.driver({ op: 'find', marker: 'widget-position-heap-load' });
+    await tourClick('next'); const t = await tourAt(1);
+    const actual = await vs.driver({ op: 'activeEditor' });
+    assert(actual.uri.endsWith('/WidgetDemo.lean') && actual.line === expected.line && actual.character === expected.character,
+      `Next cursor mismatch: ${JSON.stringify(actual)}`);
+    assert(t.text.includes('wp_load only changes the goal.') && t.text.includes('Step 2 of 9'), 'step text did not change');
+    return { actual, text: t.text };
+  });
+  await check('tour Prev returns to the preceding step', async () => {
+    const expected = await vs.driver({ op: 'find', marker: 'widget-position-heap-store' });
+    await tourClick('prev'); const t = await tourAt(0);
+    const actual = await vs.driver({ op: 'activeEditor' });
+    assert(actual.line === expected.line && actual.character === expected.character, 'Prev cursor mismatch');
+    assert(t.prevDisabled && t.text.includes('wp_store updates Hl; Hframe untouched.'), 'first-step state');
+    return { actual, text: t.text };
+  });
+  await check('tour follows manual cursor movement and reaches feedback', async () => {
+    await at('widget-position-spin-open'); const spin = await tourAt(3);
+    assert(spin.text.includes('opened invariant'), 'manual cursor did not select SpinLock');
+    const marker = await vs.driver({ op: 'find', marker: 'widget-position-spin-stored', offset: 0 });
+    await vs.driver({ op: 'cursor', ...marker });
+    await vs.until('dimmed preceding step', async () => { const t = await tour(); return t?.index === '3' && t.exact === 'false' && t.busy === 'false'; }, 30000);
+    await tourClick('prev'); await tourAt(3);
+    const expected = await vs.driver({ op: 'find', marker: 'widget-position-spin-open' });
+    const actual = await vs.driver({ op: 'activeEditor' });
+    assert(actual.line === expected.line && actual.character === expected.character, 'Prev skipped the dimmed SpinLock step');
+
+    // The first step must also remain reachable with Prev while it is dimmed.
+    const betweenFirst = await vs.driver({ op: 'find', marker: 'widget-position-heap-load', offset: 0 });
+    await vs.driver({ op: 'cursor', ...betweenFirst });
+    await vs.until('dimmed first step', async () => {
+      const t = await tour(); return t?.index === '0' && t.exact === 'false' && t.busy === 'false' && !t.prevDisabled;
+    }, 30000);
+    await tourClick('prev'); const first = await tourAt(0);
+    const firstExpected = await vs.driver({ op: 'find', marker: 'widget-position-heap-store' });
+    const firstActual = await vs.driver({ op: 'activeEditor' });
+    assert(firstActual.line === firstExpected.line && firstActual.character === firstExpected.character && first.prevDisabled,
+      'Prev should reach the first step and then become disabled');
+    await at('widget-position-how-vir'); const vir = await tourAt(7);
+    assert(vir.text.includes('Lean-authored React (VIR)'), 'VIR explanation missing');
+    await at('widget-position-feedback'); const feedback = await tourAt(8);
+    assert(feedback.nextDisabled && feedback.text.includes('Which proof'), 'feedback should finish the tour');
+    return { spin: spin.text, feedback: feedback.text };
+  });
+
+  await check('tour re-resolves markers after an unsaved line insertion', async () => {
+    const marker = await vs.driver({ op: 'find', marker: 'widget-position-heap-store', offset: 0 });
+    await vs.driver({ op: 'cursor', line: marker.line, character: 0 });
+    await vs.driver({ op: 'type', text: '\n' });
+    await at('widget-position-heap-store'); await tourAt(0);
+    const expected = await vs.driver({ op: 'find', marker: 'widget-position-heap-load' });
+    await tourClick('next'); await tourAt(1);
+    const actual = await vs.driver({ op: 'activeEditor' });
+    assert(actual.isDirty && actual.line === expected.line && actual.character === expected.character,
+      `tour used a stale line number: ${JSON.stringify(actual)}`);
+    return { actual, expected };
+  });
+
+  await check('optional tour headlines match the proof states; revert hides it', async () => {
+    for (const [marker, index, title, tactic] of [
+      ['heap-store', 0, 'wp_store updates Hl; Hframe untouched.', 'wp_store'],
+      ['heap-load', 1, 'wp_load only changes the goal.', 'wp_load'],
+      ['heap-post', 2, 'iframe discharges both cells.', 'iframe'],
+      ['spin-open', 3, 'Store inside the opened invariant.', 'wp_store'],
+      ['spin-stored', 4, 'imodintro only changes the goal.', 'imodintro'],
+      ['spin-frame', 5, 'iframe Hpt.', 'iframe Hpt'],
+      ['contexts', 6, 'isplitr [HQ HS] distributes spatial ownership.', 'isplitr [HQ HS]'],
+    ]) {
+      await at('widget-position-' + marker);
+      const t = await tourAt(index);
+      assert(t.text.includes(title), `tour headline disagrees at ${marker}`);
+      await waitWidget(`tour proof ${marker}`, w => w.tactics?.includes(tactic));
+    }
+    assert((await vs.driver({ op: 'activeEditor' })).isDirty, 'tour should only be enabled in the unsaved buffer');
+    await vs.driver({ op: 'revert' });
+    await at('widget-position-heap-store');
+    await waitWidget('default demo restored', w => w.tactics?.includes('wp_store') && w.text.includes('Hframe'));
+    await vs.until('tour disappears on revert', async () => !await tour(), 90000, 500);
+    return { optional: true, saved: false };
   });
 } catch (e) {
   results.push({ name: 'harness', ok: false, error: e.message }); console.log(`FAIL harness: ${e.message}`);

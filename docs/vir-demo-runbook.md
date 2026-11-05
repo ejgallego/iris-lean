@@ -5,6 +5,9 @@ The widget stays beside the ordinary Tactic state. Put the cursor on the code
 line immediately after each marker; the card explicitly shows the tactic's
 before-state. Allow about ten minutes.
 
+To enable the optional tour, add `public meta import IrisTest.ProofMode.WidgetTour` among the imports in `WidgetDemo.lean`.
+Then add `show_panel_widgets [local IrisTest.ProofMode.WidgetTour.widget with IrisTest.ProofMode.WidgetTour.panelProps]` immediately after the existing panel declaration.
+
 ## Presenter list
 
 Each name below has the prefix `widget-position-` in the file.
@@ -40,7 +43,7 @@ mkdir -p .tmp
 export TMPDIR="$PWD/.tmp"
 export LAKE_ARTIFACT_CACHE=true LAKE_CACHE_DIR=/home/egallego/.cache/mathlib LAKE_RESTORE_ARTIFACTS=true
 cd Iris
-lake build IrisTest +Iris.ProofMode.Widget:vir
+lake build IrisTest +Iris.ProofMode.Widget:vir +IrisTest.ProofMode.WidgetTour:vir
 cd ..
 code Iris
 ```
@@ -65,7 +68,7 @@ npm ci --prefix .lake/packages/lean_vir
 cd ..
 node scripts/widget-setup-runtime.mjs
 cd Iris
-lake build IrisTest.ProofMode.WidgetDemo +Iris.ProofMode.Widget:vir
+lake build IrisTest.ProofMode.WidgetDemo IrisTest.ProofMode.WidgetTour.Test +Iris.ProofMode.Widget:vir +IrisTest.ProofMode.WidgetTour:vir
 cd ..
 code Iris
 ```

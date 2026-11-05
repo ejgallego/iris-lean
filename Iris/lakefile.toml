@@ -32,6 +32,8 @@ precompileLibrary = true
 [[lean_lib]]
 name = "IrisTest"
 globs = ["IrisTest.+"]
+# Tour anchors are comments: track the raw demo source, not just its exported olean.
+needs = ["+IrisTest.ProofMode.WidgetDemo:lean"]
 
 [[lean_exe]]
 name = "dumpPortingData"

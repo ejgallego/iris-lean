@@ -80,13 +80,33 @@ ordinary browser regression and **23/23 real VS Code checks** pass. Evidence:
 `.tmp/vscode-e2e-runs/2026-11-05T15-53-41-025Z/`.
 The SpinLock screenshot is `.tmp/round-f/spin-open.png`.
 
-## Tour removal (Round G)
+## Optional tour (Round G correction)
 
-The demo-only guided tour and its four VS Code checks were removed. All proof
-position markers remain; use the presenter list in the runbook. Earlier validation
-counts above describe their historical checkpoints. The tour-free build and
-browser regression pass, as do all 19 remaining real VS Code checks
-(`.tmp/round-g/part1-*.log`).
+The separate `WidgetTour`, `WidgetTour.Model` and `WidgetTour.Test` modules and
+the `+IrisTest.ProofMode.WidgetTour:vir` build target are retained. `WidgetDemo`
+has no tour import or panel entry. Its proof position markers remain unchanged.
+The runbook documents the optional import and one panel declaration.
+
+`WidgetTour.Test` checks the demo source with `check_widget_tour` and
+`include_str "../WidgetDemo.lean"` at build time. `IrisTest` has an explicit Lake
+`needs` on the demo's `:lean` source facet: comment-only marker edits must
+invalidate the check even when exported oleans are unchanged. Missing/duplicate
+markers therefore fail on the tour side, with no reverse import from the demo.
+The model's invalid-marker and Prev regressions remain. Runtime navigation still resolves the current open document.
+
+The browser gate enables the tour only in its in-memory test document; `--demo`
+uses the checked-in default. The VS Code gate runs all 20 default checks first,
+then types the optional import/declaration without saving. Its four restored
+tour cases cover Next, Prev (including between steps), manual synchronization,
+and shifted markers. A fifth case checks headlines against the selected tactics
+and verifies that reverting hides the tour. No separate flag is required.
+
+Validation: combined `IrisTest` plus both `:vir` targets (1,159 jobs), `lake test`,
+the browser gate and **25/25 real VS Code checks** pass. A build-cache regression
+also confirms success with valid markers and failure after only renaming or
+duplicating a marker comment; the source is restored afterward. Logs/status:
+`.tmp/round-g-correction/`; real-host run:
+`.tmp/vscode-e2e-runs/2026-11-05T18-49-15-656Z/`.
 
 The quotation POC adds `IrisTest.HeapLang.PPQuotations`: exact output with the
 option on/off, unchanged nested HeapLang syntax, function-value fallback, and

@@ -54,10 +54,13 @@ including the old/new proposition text, preserved resources and native new-side
 terms. Cursor waits identify the selected tactic so the new after-view cannot
 make a stale snapshot accidentally satisfy the next position's predicate.
 
-Round G removes the guided tour and its four checks. The remaining 19 checks
-cover native terms/navigation, annotations, split distribution, mask/invariant
-folding, before-state labelling and continuity while moving or typing.
+Round G keeps the tour separate and disabled by default. The first 20 checks
+run on the default document, including an assertion that the tour is absent.
+The harness then types the optional import and panel declaration into the unsaved
+buffer. Restored Next/Prev/manual-navigation/shifted-marker checks and a headline
+check exercise the tour; reverting the buffer must hide it again. No `--tour`
+flag, saved source change, or default tour dependency is needed.
 
-The quotation POC adds a twentieth check: shortened `#b` retains the native
+The quotation POC check verifies that shortened `#b` retains the native
 `b : Bool` hover, Ctrl-click on shortened `false` reaches its real definition,
 and the demo option also affects the ordinary Tactic state.
