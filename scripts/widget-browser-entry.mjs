@@ -5,10 +5,14 @@ let actionId = 0;
 async function action(kind, element) {
   element?.scrollIntoView({ block: "center" });
   let rect = element?.getBoundingClientRect();
-  if (kind === "click" && element) {
+  if (element) {
+    // A wrapped native leaf's bounding-box centre can land in empty space between
+    // its fragments. Hover the painted text, as we already do for definition clicks.
     const text = document.createTreeWalker(element, NodeFilter.SHOW_TEXT).nextNode();
-    const range = document.createRange(); range.selectNodeContents(text);
-    rect = range.getClientRects()[0];
+    if (text) {
+      const range = document.createRange(); range.selectNodeContents(text);
+      rect = range.getClientRects()[0] ?? rect;
+    }
   }
   const id = ++actionId;
   globalThis.irisAction = { id, kind, x: rect ? rect.x + (kind === "click" ? Math.min(5, rect.width / 2) : rect.width / 2) : 0,
@@ -109,10 +113,16 @@ async function run() {
     const packageCalls = () => host.calls.filter(c => c.method === "Lean.Vir.Infoview.buildIRPackage").length;
     const startupPackages = packageCalls();
     const snapshot = await host.snapshot(config.contexts), payload = JSON.parse(snapshot.display);
-    check(payload.version === 5 && snapshot.codes.length > 0, "versioned native terms");
+    check(payload.version === 6 && snapshot.codes.length > 0, "versioned native terms");
     check(target().textContent === payload.goals[0].target.text, "canonical native target");
     check(payload.goals[0].comparison.branches.length === 2, "branching tactic retains both outcomes");
-    check(panel().querySelectorAll('[data-after-goal-id]').length === 2, "both outcomes rendered");
+    check(panel().querySelectorAll('[data-annotation-kind="target"]').length === 2, "both outcomes rendered");
+    for (const name of ["HP", "HQR"]) check(!panel().querySelector(`[data-resource-name="${name}"][data-annotation-kind]`),
+      "shared persistent hypothesis needs no destination annotation");
+    for (const name of ["HQ", "HS"]) check(panel().querySelector(`[data-resource-name="${name}"]`)?.textContent === "↳ isplitr: goal 2",
+      "spatial resource goes to the second goal");
+    check([...panel().querySelectorAll('[data-hypothesis-name]')].map(e => e.dataset.hypothesisName).join(' ') === 'HP HQR HQ HS',
+      "before-state context order retained at split");
     check(!panel().querySelector('[data-term-ref]'), "retired per-leaf buttons");
     check(!panel().querySelector('section[aria-label="Target"] button'), "no inline inspector");
     check(parseFloat(getComputedStyle(leaf("P")).fontSize) === config.fontSize, "editor font size");
@@ -122,6 +132,9 @@ async function run() {
     await action("key"); await wait("Enter collapses goal", () => firstToggle.getAttribute("aria-expanded") === "false");
     await action("key"); await wait("Enter expands goal", () => firstToggle.getAttribute("aria-expanded") === "true");
     await move(config.binders); await hover("n", "Nat"); await hover("m", "Nat");
+    const added = panel().querySelector('[data-annotation-kind="added"]');
+    check(added?.textContent.startsWith('↳ iintro adds ∗H: ') && added.querySelector('[data-has-tooltip-on-hover]'),
+      "new hypothesis appended with a native proposition");
 
     // A fresh snapshot avoids the native popup's already-loaded hover cache.
     await move(config.contexts); await move(config.binders);
@@ -245,11 +258,20 @@ async function run() {
       for (const [name, status] of Object.entries(expected)) {
         const change = changes.find(c => c.name === name);
         check(change?.status === status, `${tactic}: ${name} should be ${status}`);
-        const row = panel().querySelector(`[data-resource-name="${name}"][data-resource-status="${status}"]`);
-        check(row, `${name} status rendered`);
-        if (status === "changed") check(row.textContent.includes("was: " + change.before) &&
-          row.querySelector('[data-term-id]').textContent === change.after.text, "both proposition sides rendered");
+        const row = panel().querySelector(`[data-resource-name="${name}"][data-annotation-kind]`);
+        if (status === "preserved") check(!row, `${name}: unchanged row must have no annotation`);
+        else {
+          check(row, `${name} annotation rendered`);
+          check(row.dataset.annotationKind === (status === "removed" ? "gone" : status), `${name}: annotation kind`);
+          if (status === "changed") check(row.querySelector('[data-term-id]').textContent === change.after.proposition.text,
+            "native new proposition rendered below the original");
+          if (status === "removed") check(row.textContent === `↳ ${tactic.split(' ')[0]}: no longer in context`, "neutral context departure");
+        }
       }
+      check(comparison.branches[0].targetChanged, `${tactic}: target changes`);
+      const targetAnnotation = panel().querySelector('[data-annotation-kind="target"]');
+      check(targetAnnotation?.querySelector('[data-term-id]').textContent === comparison.branches[0].target.text,
+        `${tactic}: new target rendered natively`);
     };
     const corpus = [];
     for (const [name, value, wp] of [["heapStore", "v", true], ["heapLoad", "v'", true], ["heapPost", "v'", false]]) {
@@ -263,13 +285,14 @@ async function run() {
       for (const hyp of goal.spatial) check([...panel().querySelectorAll('[data-term-id]')]
         .some(n => n.dataset.termId === hyp.proposition.id && n.textContent === hyp.proposition.text), "canonical Heap resource");
       await hover("l", "Loc"); if (wp) { await hover("E", "CoPset"); await hover("r", "Val"); }
+      if (name === "heapPost") assertChanges(goal, { Hl: "removed", Hframe: "removed" }, "iframe");
       if (name === "heapStore" || name === "heapLoad") {
         assertChanges(goal, { Hframe: "preserved", Hl: name === "heapStore" ? "changed" : "preserved" },
           name === "heapStore" ? "wp_store" : "wp_load");
       }
       if (name === "heapStore") {
         await hover("v'", "Val", panel().querySelector('[data-resource-name="Hl"]'));
-        // Native navigation is tested at EditorApi.showDocument; VS Code opens the file in the maintainer check.
+        // Native navigation is tested at EditorApi.showDocument; the real VS Code gate opens the file.
         const some = native().find(node => node.textContent.startsWith("some ")); check(some, "native constant tag");
         const navigationsBefore = host.navigations.length;
         await action("click", some); await wait("go to definition", () => host.navigations.length > navigationsBefore);
@@ -301,15 +324,15 @@ async function run() {
     assertChanges(framed, { Hl: "preserved", HR: "preserved", Hcont: "preserved", Hinv: "preserved",
       Hcond: "preserved", Hpt: "removed" }, "iframe Hpt");
     await move({ line: config.heapStore.line - 1, character: 4 });
-    check(!panel().querySelector('[data-before-goal-id]'), "comment outside tactic has the ordinary view");
-    // Inside the selected tactic, Lean uses its after-state. Keep the whole
-    // before-goal group rather than silently choosing one resulting goal.
+    check(!panel().querySelector('[data-comparison-summary]'), "comment outside tactic has the ordinary view");
+    // Inside the selected tactic, Lean may choose its after side. The widget still
+    // annotates one before-card with ALL resulting goals, reading forward in time.
     await move({ ...config.contexts, character: config.contexts.character + 1 });
-    check(cards().length === 2 && panel().querySelectorAll('[data-after-goal-id]').length === 2,
-      "after-side split retains both descendants");
+    check(cards().length === 1 && panel().querySelectorAll('[data-annotation-kind="target"]').length === 2,
+      "after-side position still annotates one before-card with both descendants");
     await move({ ...config.split, character: config.split.character + 3 });
     check(panel().querySelector('[data-comparison-outcome="closed"]') &&
-      !panel().querySelector('[data-resource-status="removed"]'), "closed goal is not resource consumption");
+      !panel().querySelector('[data-annotation-kind="gone"]'), "closed goal is not resource consumption");
     check(corpus.every(c => !c.overflow && c.termButtons === 0), "native terms overflow or create Tab-stop buttons");
     invalidFingerprint = true;
     await host.move(config.contexts);

@@ -57,12 +57,36 @@ def interactiveTerm : RuntimeM (Client.Component InteractiveTermProps) := do
       data-term-active={(← JsValue.ofBool enabled)} aria-label={(← JsValue.ofString props.ariaLabel)}
       style={(← Style.termCode props.target)}>{value}</span></span>})
 
+structure AnnotationProps where
+  context : Client.Context
+  annotation : Annotation
+  resourceName : String := ""
+
+def annotationRow : RuntimeM (Client.Component AnnotationProps) := do
+  let term ← interactiveTerm
+  Client.Component.ofLean (fun props => do
+    let annotation := props.annotation
+    let value : Js.Array Node ← if let some after := annotation.term? then
+      Js.Array.ofArray #[← Client.Component.render term {
+        context := props.context, term := after
+        ariaLabel := if annotation.kind == .target then "Target after tactic"
+          else props.resourceName ++ " after tactic"
+      } (some (← JsValue.ofString (toString props.context.epoch)))]
+    else Js.Array.empty
+    return ← jsx%{<div data-annotation-kind={(← JsValue.ofString annotation.kind.label)}
+      data-resource-name={(← JsValue.ofString props.resourceName)}
+      data-after-goal-id={(← JsValue.ofString (annotation.branchId?.getD ""))}
+      style={(← Style.annotation annotation.term?.isSome)}>
+      <span>{Html.text ("↳ " ++ annotation.lead)}</span>{value}</div>})
+
 structure HypothesisProps where
   context : Client.Context
   hypothesis : DisplayHypothesis
+  annotations : Array Annotation := #[]
 
 def hypothesisRow : RuntimeM (Client.Component HypothesisProps) := do
   let term ← interactiveTerm
+  let annotation ← annotationRow
   Client.Component.ofLean (fun props => do
     let hypothesis := props.hypothesis
     let name ← jsx%{<span><span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>
@@ -73,99 +97,60 @@ def hypothesisRow : RuntimeM (Client.Component HypothesisProps) := do
       term := hypothesis.proposition
       ariaLabel := kindLabel hypothesis.kind ++ " hypothesis " ++ hypothesis.name
     } (some (← JsValue.ofString (toString props.context.epoch)))
-    return ← jsx%{<li role="listitem" style={(← Style.hypothesis)}>{name}{value}</li>})
+    let annotations ← props.annotations.zipIdx.mapM fun (entry, index) => do
+      Client.Component.render annotation {
+        context := props.context, annotation := entry, resourceName := hypothesis.name
+      } (some (← JsValue.ofString s!"annotation-{index}"))
+    let annotations : Js.Array Node ← Js.Array.ofArray annotations
+    return ← jsx%{<li role="listitem" data-hypothesis-name={(← JsValue.ofString hypothesis.name)}
+      style={(← Style.hypothesis)}>{name}{value}{annotations}</li>})
 
 structure ContextProps where
   context : Client.Context
   id : Js String
   kind : ContextKind
   hypotheses : Array DisplayHypothesis
+  comparison? : Option DisplayComparison
 
 def contextSection : RuntimeM (Client.Component ContextProps) := do
   let row ← hypothesisRow
+  let annotation ← annotationRow
   Client.Component.ofLean (fun props => do
     let label := kindLabel props.kind
-    let values ← props.hypotheses.mapM fun hypothesis => do
-      Client.Component.render row { hypothesis, context := props.context } (some (← JsValue.ofString hypothesis.id))
-    let values : Js.Array Node ← Js.Array.ofArray values
+    let mut values ← props.hypotheses.mapM fun hypothesis => do
+      Client.Component.render row {
+        hypothesis, context := props.context
+        annotations := props.comparison?.map (·.hypothesisAnnotations hypothesis) |>.getD #[]
+      } (some (← JsValue.ofString hypothesis.id))
+    for (hypothesis, entry) in props.comparison?.map (·.additions props.kind) |>.getD #[] do
+      let value ← Client.Component.render annotation {
+        context := props.context, annotation := entry, resourceName := hypothesis.name }
+      values := values.push (← jsx%{<li key={(← JsValue.ofString s!"added-{entry.branchId?}-{hypothesis.id}")}
+        role="listitem">{value}</li>})
+    let nativeValues : Js.Array Node ← Js.Array.ofArray values
     return ← jsx%{<section id={props.id} aria-label={(← JsValue.ofString label)}
       style={(← Style.contextSection (props.kind == .persistent))}><ul role="list"
-      aria-label={(← JsValue.ofString (label ++ " hypotheses"))} style={(← Style.hypothesisList)}>{values}</ul></section>})
+      aria-label={(← JsValue.ofString (label ++ " hypotheses"))} style={(← Style.hypothesisList)}>{nativeValues}</ul></section>})
 
 structure TargetProps where
   context : Client.Context
   term : RenderedTerm
+  annotations : Array Annotation := #[]
 
 def targetSection : RuntimeM (Client.Component TargetProps) := do
   let term ← interactiveTerm
+  let annotation ← annotationRow
   Client.Component.ofLean (fun props => do
     let value ← Client.Component.render term {
       context := props.context
       term := props.term, ariaLabel := "Target", target := true
     } (some (← JsValue.ofString (toString props.context.epoch)))
+    let annotations ← props.annotations.zipIdx.mapM fun (entry, index) => do
+      Client.Component.render annotation { context := props.context, annotation := entry }
+        (some (← JsValue.ofString s!"target-{index}"))
+    let annotations : Js.Array Node ← Js.Array.ofArray annotations
     return ← jsx%{<section aria-label="Target" style={(← Style.targetSection)}><div style={(← Style.target)}>
-      <span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>⊢</span>{value}</div></section>})
-
-structure ResourceChangeProps where
-  context : Client.Context
-  change : DisplayResourceChange
-
-def resourceChangeRow : RuntimeM (Client.Component ResourceChangeProps) := do
-  let term ← interactiveTerm
-  Client.Component.ofLean (fun props => do
-    let change := props.change
-    let (status, label) := match change.status with
-      | .changed => ("changed", "changed")
-      | .preserved => ("preserved", "preserved")
-      | .added => ("added", "new")
-      | .removed => ("removed", "removed")
-    let value ← if let some after := change.after? then
-      Client.Component.render term {
-        context := props.context, term := after, ariaLabel := change.name ++ " after tactic"
-      } (some (← JsValue.ofString (toString props.context.epoch)))
-    else jsx%{<span style={(← Style.removedTerm)}>{Html.text (change.before?.getD "")}</span>}
-    let old : Js.Array Node ← if change.status == .changed then
-      Js.Array.ofArray #[← jsx%{<div key="old" style={(← Style.oldResource)}>
-        {Html.text ("was: " ++ change.before?.getD "")}</div>}]
-    else Js.Array.empty
-    return ← jsx%{<div role="listitem" data-resource-name={(← JsValue.ofString change.name)}
-      data-resource-status={(← JsValue.ofString status)} style={(← Style.resourceChange)}>
-      <div><strong style={(← Style.hypothesisName)}>{Html.text change.name}</strong>
-        {Html.text ": "}<span style={(← Style.resourceStatus)}>{Html.text label}</span></div>
-      <div>{value}{old}</div></div>})
-
-structure ComparisonProps where
-  context : Client.Context
-  comparison : DisplayComparison
-
-def comparisonSection : RuntimeM (Client.Component ComparisonProps) := do
-  let row ← resourceChangeRow
-  Client.Component.ofLean (fun props => do
-    let comparison := props.comparison
-    let mut contents : Array (Js Node) := #[]
-    if comparison.closed then
-      contents := contents.push (← jsx%{<div key="closed" data-comparison-outcome="closed">Goal closed</div>})
-    if let some reason := comparison.unavailable? then
-      contents := contents.push (← jsx%{<div key="unavailable" data-comparison-outcome="unavailable">
-        {Html.text ("Comparison unavailable: " ++ reason)}</div>})
-    for (branch, index) in comparison.branches.zipIdx do
-      let mut children : Array (Js Node) := #[]
-      if comparison.branches.size > 1 then
-        children := children.push (← jsx%{<strong key="heading">{Html.text s!"Result {index + 1} of {comparison.branches.size}"}</strong>})
-      if let some reason := branch.unavailable? then
-        children := children.push (← jsx%{<div key="unavailable" data-comparison-outcome="unavailable">
-          {Html.text ("Comparison unavailable: " ++ reason)}</div>})
-      for change in branch.resources do
-        children := children.push (← Client.Component.render row { change, context := props.context }
-          (some (← JsValue.ofString change.id)))
-      let nativeChildren : Js.Array Node ← Js.Array.ofArray children
-      contents := contents.push (← jsx%{<div key={(← JsValue.ofString branch.id)} role="list"
-        data-after-goal-id={(← JsValue.ofString branch.id)} aria-label="Resource changes">{nativeChildren}</div>})
-    let nativeContents : Js.Array Node ← Js.Array.ofArray contents
-    return ← jsx%{<section aria-label="Tactic resource changes" data-before-goal-id={(← JsValue.ofString comparison.beforeId)}
-      data-tactic={(← JsValue.ofString comparison.tactic)} style={(← Style.comparisonSection)}>
-      <div style={(← Style.comparisonHeading)}>{Html.text ("After " ++ comparison.tactic ++ " · resources")}</div>
-      {nativeContents}</section>})
+      <span aria-hidden={(← JsValue.ofBool true)} style={(← Style.glyph)}>⊢</span>{value}</div>{annotations}</section>})
 
 structure GoalProps where
   context : Client.Context
@@ -175,7 +160,6 @@ structure GoalProps where
 def goalCard : RuntimeM (Client.Component GoalProps) := do
   let contextView ← contextSection
   let targetView ← targetSection
-  let changesView ← comparisonSection
   Client.Component.ofLean (fun props => do
     let goal := props.goal
     let expandedState ← Client.useState props.initiallyExpanded
@@ -198,19 +182,25 @@ def goalCard : RuntimeM (Client.Component GoalProps) := do
       style={(← Style.collapseButton)}>{Html.text (if expanded then "−" else "+")}</button></header>}
     let mut children : Array (Js Node) := #[]
     if let some comparison := goal.comparison? then
-      children := children.push (← Client.Component.render changesView { comparison, context := props.context }
-        (some (← js#"comparison")))
-    if !goal.persistent.isEmpty then
+      let summary := goal.changeSummary comparison
+      children := children.push (← jsx%{<div key="comparison" data-comparison-summary="true"
+        data-tactic={(← JsValue.ofString comparison.tactic)}
+        data-comparison-outcome={(← JsValue.ofString (if comparison.closed then "closed"
+          else if comparison.unavailable.isSome then "unavailable" else "ready"))}
+        title={(← JsValue.ofString summary)} style={(← Style.changeSummary)}>{Html.text summary}</div>})
+    if !goal.persistent.isEmpty || (goal.comparison?.map (·.additions .persistent) |>.getD #[]).size > 0 then
       children := children.push (← Client.Component.render contextView {
-        context := props.context
+        context := props.context, comparison? := goal.comparison?
         id := persistentId, kind := .persistent, hypotheses := goal.persistent
       } (some (← js#"persistent")))
-    if !goal.spatial.isEmpty then
+    if !goal.spatial.isEmpty || (goal.comparison?.map (·.additions .spatial) |>.getD #[]).size > 0 then
       children := children.push (← Client.Component.render contextView {
-        context := props.context
+        context := props.context, comparison? := goal.comparison?
         id := spatialId, kind := .spatial, hypotheses := goal.spatial
       } (some (← js#"spatial")))
-    children := children.push (← Client.Component.render targetView { term := goal.target, context := props.context }
+    children := children.push (← Client.Component.render targetView {
+      term := goal.target, context := props.context
+      annotations := goal.comparison?.map (·.targetAnnotations) |>.getD #[] }
       (some (← js#"target")))
     let contents : Js.Array Node ← if expanded then
       let nativeChildren : Js.Array Node ← Js.Array.ofArray children

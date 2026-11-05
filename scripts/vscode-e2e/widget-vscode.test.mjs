@@ -22,8 +22,11 @@ const WIDGET = `(() => {
     cards: cards.map(c => ({ id: c.dataset.goalId, expanded: c.querySelector('header button')?.getAttribute('aria-expanded'), marked: c.__irisE2E ?? null })),
     termButtons: w.querySelectorAll('[data-term-ref]').length, buttons: w.querySelectorAll('button').length,
     tactics: [...w.querySelectorAll('[data-tactic]')].map(e => e.dataset.tactic),
-    changes: [...w.querySelectorAll('[data-resource-status]')].map(e => ({ name: e.dataset.resourceName,
-      status: e.dataset.resourceStatus, text: e.innerText, native: !!e.querySelector('[data-has-tooltip-on-hover]') })),
+    changes: [...w.querySelectorAll('[data-resource-name][data-annotation-kind]')].filter(e => e.dataset.resourceName).map(e => ({ name: e.dataset.resourceName,
+      status: e.dataset.annotationKind, text: e.innerText, native: !!e.querySelector('[data-has-tooltip-on-hover]') })),
+    targets: [...w.querySelectorAll('[data-annotation-kind="target"]')].map(e => e.innerText),
+    summary: w.querySelector('[data-comparison-summary]')?.textContent,
+    rows: [...w.querySelectorAll('[data-hypothesis-name]')].map(e => ({ name: e.dataset.hypothesisName, text: e.children[1].textContent })),
     busy: !!w.closest('[aria-busy="true"]') };
 })()`;
 const widget = () => infoviewEval(vs, WIDGET);
@@ -32,7 +35,10 @@ async function check(name, f) {
   const t0 = Date.now();
   try { const detail = await f(); results.push({ name, ok: true, ms: Date.now() - t0, detail }); console.log(`ok   ${name}`); }
   catch (e) { results.push({ name, ok: false, ms: Date.now() - t0, error: e.message }); console.log(`FAIL ${name}: ${e.message}`); }
-  try { const s = await vs.workbench.send('Page.captureScreenshot', { format: 'png' });
+  try {
+    if (/heap store: typed|spinlock open$|spinlock stored$|split distributes/.test(name))
+      await infoviewEval(vs, `document.querySelector('[data-iris-proof-mode-widget] article')?.scrollIntoView({ block: 'center' })`);
+    const s = await vs.workbench.send('Page.captureScreenshot', { format: 'png' });
     writeFileSync(`${vs.run}/${String(++shots).padStart(2, '0')}-${name.replace(/\W+/g, '-')}.png`, Buffer.from(s.data, 'base64')); } catch {}
 }
 const assert = (c, m) => { if (!c) throw new Error(m); };
@@ -118,19 +124,21 @@ try {
 
   await check('heap store: typed resource comparison', async () => {
     const w = await waitWidget('store comparison', w => w.present && w.tactics.includes('wp_store'));
-    const cell = w.changes.find(r => r.name === 'Hl'), frame = w.changes.find(r => r.name === 'Hframe');
-    assert(w.changes.length === 2, 'store must account for both resources');
-    assert(cell?.status === 'changed' && cell.text.includes("l ↦ some v'") && cell.text.includes('was: l ↦ some v'),
-      'store must show new and old cell propositions');
-    assert(cell.native && frame?.status === 'preserved', 'native new term and preserved frame');
-    return { changes: w.changes };
+    const cell = w.changes.find(r => r.name === 'Hl');
+    assert(w.changes.length === 1 && cell?.status === 'changed', 'only Hl has a hypothesis annotation');
+    assert(cell.native && cell.text.includes("l ↦ some v'"), 'native new cell proposition');
+    assert(w.rows.find(r => r.name === 'Hl')?.text === 'l ↦ some v', 'before proposition stays above its annotation');
+    assert(w.summary === 'wp_store changes Hl and the goal' && w.targets.length === 1, 'store summary and goal annotation');
+    assert(!w.text.includes('was:') && !w.text.includes('preserved'), 'redundant comparison text remains');
+    return w;
   });
 
-  await check('heap load: Hl changed, Hframe unchanged', async () => {
+  await check('heap load only annotates the goal', async () => {
     await at('widget-position-heap-load');
     const w = await waitWidget('heap load widget', w => w.present && w.tactics.includes("wp_load") && w.text.includes("l ↦ some v'"));
     assert(w.text.includes("l' ↦ some w"), 'Hframe changed');
-    return { text: w.text };
+    assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'wp_load only changes the goal', 'load must leave hypothesis rows quiet');
+    return w;
   });
 
   await check('native hover shows a contextual type', async () => {
@@ -152,12 +160,31 @@ try {
     return { tip: tip.slice(0, 200) };
   });
 
+  await check('annotated new term has native contextual hover', async () => {
+    await at('widget-position-heap-load');
+    await waitWidget('load before fresh annotation', w => w.tactics?.includes('wp_load'));
+    await at('widget-position-heap-store');
+    await waitWidget('new store annotation', w => w.tactics?.includes('wp_store'));
+    const hovered = await infoviewEval(vs, `(() => {
+      const row = document.querySelector('[data-resource-name="Hl"][data-annotation-kind="changed"]');
+      const target = [...row.querySelectorAll('span')].find(s => s.textContent === "v'" && s.childElementCount === 0);
+      if (!target) return false;
+      for (const type of ['pointerover', 'pointermove', 'mouseover', 'mousemove'])
+        target.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true }));
+      return true;
+    })()`);
+    assert(hovered, 'new value has no native tag');
+    const tip = await vs.until('annotated v-prime hover', () => infoviewEval(vs, `(() =>
+      [...document.querySelectorAll('.tooltip')].map(e => e.innerText).find(s => s.includes("v'") && s.includes('Val')))()`), 20000, 500);
+    return { tip };
+  });
+
   await check('native definition navigation opens the Lean source file', async () => {
     await at('widget-position-heap-store');
     await waitWidget('heap store for definition', w => w.present && /Hl:\s*l ↦ some v(?!')/.test(w.text));
     const clicked = await infoviewEval(vs, `(() => {
       const w = document.querySelector('[data-iris-proof-mode-widget]');
-      const term = [...w.querySelectorAll('[data-has-tooltip-on-hover]')]
+      const term = [...w.querySelectorAll('[data-annotation-kind="changed"] [data-has-tooltip-on-hover]')]
         .find(e => e.textContent.startsWith('some '));
       if (!term) return false;
       term.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
@@ -187,7 +214,10 @@ try {
     await at('widget-position-heap-post');
     const w = await waitWidget('heap postcondition', w => w.present && w.text.includes("⌜v' = v'⌝") && !w.text.includes('WP '));
     assert(w.text.includes("l ↦ some v'") && w.text.includes("l' ↦ some w"), 'postcondition lost a cell');
-    return { text: w.text };
+    assert(w.changes.length === 2 && w.changes.every(r => r.status === 'gone' && r.text === '↳ iframe: no longer in context'),
+      'iframe must report context departures without inferring consumption');
+    assert(w.targets.length === 1 && w.targets[0].includes("⌜v' = v'⌝"), 'iframe reduces the target');
+    return w;
   });
 
   for (const [marker, cell, targetPrefix] of [
@@ -200,25 +230,43 @@ try {
         w.tactics.includes(marker.endsWith('open') ? 'wp_store' : 'imodintro'));
       for (const term of ['locked γ', 'HR:', 'Hcond:', 'spinlockN']) assert(w.text.includes(term), `missing ${term}`);
       assert(w.termButtons === 0, 'custom term buttons remain');
-      const comparisonFirst = await infoviewEval(vs, `(() => {
-        const card = document.querySelector('[data-iris-proof-mode-widget] article');
-        return card?.querySelector('header + div')?.firstElementChild?.hasAttribute('data-before-goal-id');
-      })()`);
-      assert(comparisonFirst, 'resource comparison should precede the current-state body');
-      return { termButtons: w.termButtons, text: w.text };
+      assert(w.rows.map(r => r.name).join(' ') === (marker.endsWith('open') ? 'Hinv Hl HR Hcont Hpt Hcond' : 'Hinv Hl HR Hcont Hcond Hpt'), 'SpinLock context order changed');
+      if (marker.endsWith('stored')) {
+        assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'imodintro only changes the goal',
+          'imodintro must annotate only the target');
+      }
+      return w;
     });
 
-  await check('spinlock store: typed resource comparison', async () => {
+  await check('spinlock store annotates Hpt and Hcond in place', async () => {
     await at('widget-position-spin-open');
     const w = await waitWidget('spin store comparison', w => w.present && w.text.includes('Hinv') && w.tactics.includes('wp_store'));
-    const expected = { Hpt: 'changed', Hcond: 'changed', Hinv: 'preserved', Hl: 'preserved', HR: 'preserved', Hcont: 'preserved' };
-    assert(w.changes.length === 6, 'spin store must account for all resources');
-    for (const [name, status] of Object.entries(expected))
-      assert(w.changes.find(r => r.name === name)?.status === status, `${name} should be ${status}`);
+    assert(w.changes.map(r => r.name).join(' ') === 'Hpt Hcond', 'only changed rows, in context order');
+    assert(w.changes.every(r => r.status === 'changed'), 'changed resource statuses');
     const cell = w.changes.find(r => r.name === 'Hpt'), condition = w.changes.find(r => r.name === 'Hcond');
-    assert(cell.native && cell.text.includes('#false') && cell.text.includes('was: ▷ l'), 'cell before/after');
-    assert(condition.text.includes('was: ▷ if b'), 'condition loses its later modality');
-    return { changes: w.changes };
+    assert(cell.native && cell.text.includes('#false') && !cell.text.includes('▷'), 'new cell loses its later');
+    assert(condition.text.includes('if b') && !condition.text.includes('▷'), 'new condition loses its later');
+    assert(w.targets.length === 1 && w.summary === 'wp_store changes Hpt, Hcond and the goal', 'SpinLock goal and summary');
+    return w;
+  });
+
+  await check('spinlock iframe marks only Hpt leaving the context', async () => {
+    await at('widget-position-spin-frame');
+    const w = await waitWidget('spin frame', w => w.tactics?.includes('iframe Hpt'));
+    assert(w.changes.length === 1 && w.changes[0].name === 'Hpt' && w.changes[0].status === 'gone' &&
+      w.changes[0].text === '↳ iframe: no longer in context', 'neutral context departure on Hpt');
+    assert(w.targets.length === 1, 'frame target annotation');
+    return w;
+  });
+
+  await check('split distributes resources and shows both new targets', async () => {
+    await at('widget-position-contexts');
+    const w = await waitWidget('split annotations', w => w.tactics?.includes('isplitr [HQ HS]'));
+    assert(w.cards.length === 1, 'one annotated before-card');
+    assert(w.changes.map(r => r.name).join(' ') === 'HQ HS', 'shared persistent resources stay quiet');
+    assert(w.changes.every(r => r.status === 'distributed' && r.text === '↳ isplitr: goal 2'), 'spatial destinations');
+    assert(w.targets.length === 2 &&  /goal 1 ⊢\s*P/.test(w.targets[0]) && /goal 2 ⊢\s*R ∗ S/.test(w.targets[1]), 'both resulting targets in order');
+    return w;
   });
 
   await check('ordinary Lean goal renders no Iris panel', async () => {

@@ -131,29 +131,35 @@ private def displayIrisGoalAt?
 private def displayComparison (tactic : String) (comparison : GoalChanges.Comparison)
     (codes : Array CodeWithInfos) : IO (DisplayComparison × Array CodeWithInfos) := do
   let before := comparison.before
-  let oldText ← before.context.runMetaM {} <| before.id.withContext do
-    before.resources.mapM fun resource => do
-      return (resource.id, toString (← ppExprTagged resource.proposition delabIProp).stripTags)
   let mut codes := codes
   let mut branches := #[]
   for branch in comparison.branches do
     let mut hypotheses := #[]
-    if let some after := branch.after? then
-      let ((_, values), nextCodes) ← after.context.runMetaM {} <| after.id.withContext do
-        (displayHypotheses after.iris.hyps).run codes
-      hypotheses := values
-      codes := nextCodes
+    let mut target? := none
+    if branch.unavailable?.isNone then
+      if let some after := branch.after? then
+        let (goal, nextCodes) ← after.context.runMetaM {} <| after.id.withContext do
+          (toDisplayGoal after.iris after.id branch.index none).run codes
+        hypotheses := goal.persistent ++ goal.spatial
+        target? := some { goal.target with id := s!"iris-target-after-{before.id.name}-{branch.id.name}" }
+        codes := nextCodes
     let resources ← branch.resources.mapM fun change => do
-      let some resource := change.after?.orElse (fun _ => change.before?) | throw <| IO.userError "resource change has neither side"
+      let some resource := change.after?.orElse (fun _ => change.before?)
+        | throw <| IO.userError "resource change has neither side"
       return {
         id := toString resource.id.name
         name := toString resource.name
         status := change.status
         after? := (hypotheses.find? (·.id == toString resource.id.name)).map fun h =>
-          { h.proposition with id := s!"iris-change-{before.id.name}-{branch.id.name}-{resource.id.name}" }
-        before? := (oldText.find? (·.1 == resource.id)).map (·.2)
+          { h with proposition.id := s!"iris-change-{before.id.name}-{branch.id.name}-{resource.id.name}" }
       : DisplayResourceChange }
-    branches := branches.push { id := toString branch.id.name, resources, unavailable? := branch.unavailable? }
+    -- Existing rows are annotated in the before-card's order. Additions follow the
+    -- successor's display order, including its persistent/spatial grouping.
+    let ordered := hypotheses.filterMap fun h => resources.find? (·.id == h.id)
+    let resources := ordered ++ resources.filter (·.after?.isNone)
+    branches := branches.push {
+      id := toString branch.id.name, index := branch.index, target?, resources
+      targetChanged := branch.targetChanged, unavailable? := branch.unavailable? }
   return ({
     tactic, beforeId := toString before.id.name, branches
     closed := comparison.closed, unavailable? := comparison.unavailable?
@@ -171,39 +177,35 @@ def state (params : StateRequest) : RequestM (RequestTask SnapshotReply) := do
     let mut codes := #[]
     for result in results?.getD [] do
       let ti := result.tacticInfo
-      let ci := { result.ctxInfo with mctx := if result.useAfter then ti.mctxAfter else ti.mctxBefore }
-      let goalIds := if result.useAfter then ti.goalsAfter else ti.goalsBefore
-      let goals ← ci.runMetaM {} <| goalIds.toArray.mapM Lean.Widget.goalToInteractive
-      let start := displayGoals.size
-      for goal in goals do
-        RequestM.checkCancelled
-        let (displayGoal?, nextCodes) ← displayIrisGoalAt? goal displayGoals.size codes
-        codes := nextCodes
-        if let some displayGoal := displayGoal? then
-          displayGoals := displayGoals.push displayGoal
-      if !result.hangingBy && ti.stx.getRange?.any (fun range => range.start ≤ pos && pos < range.stop) then
-        let comparisons ← GoalChanges.compareTactic result.ctxInfo ti
+      let inTactic := !result.hangingBy &&
+        ti.stx.getRange?.any (fun range => range.start ≤ pos && pos < range.stop)
+      let comparisons ← if inTactic then GoalChanges.compareTactic result.ctxInfo ti else pure #[]
+      if !comparisons.isEmpty then
+        -- An annotation always reads forward from its own saved before-state,
+        -- including at positions where the standard infoview selects the after side.
         for comparison in comparisons do
           RequestM.checkCancelled
-          -- One before-goal owns ALL its outcomes. On the after side, attach the group
-          -- once to its first visible descendant, without discarding the other branches.
-          let owner? := (displayGoals.toList.drop start).find? fun goal =>
-            goal.id == toString comparison.before.id.name ||
-              comparison.branches.any (fun branch => goal.id == toString branch.id.name)
-          let ownerId ← if let some owner := owner? then pure owner.id else do
-            -- In particular, preserve a closed goal as a closed card, not a list of removals.
-            let before := comparison.before
-            let (goal, nextCodes) ← before.context.runMetaM {} <| before.id.withContext do
-              (toDisplayGoal before.iris before.id displayGoals.size none).run codes
-            codes := nextCodes
-            displayGoals := displayGoals.push goal
-            pure goal.id
+          let before := comparison.before
+          let (goal, nextCodes) ← before.context.runMetaM {} <| before.id.withContext do
+            let userName := (← before.id.getDecl).userName
+            (toDisplayGoal before.iris before.id displayGoals.size
+              (if userName.isAnonymous then none else some (toString userName))).run codes
+          codes := nextCodes
           let label := (ti.stx.getRange?.map fun range =>
             String.Pos.Raw.extract doc.meta.text.source range.start range.stop).getD (toString ti.stx.getKind)
           let (display, nextCodes) ← displayComparison label comparison codes
           codes := nextCodes
-          displayGoals := displayGoals.map fun goal =>
-            if goal.id == ownerId then { goal with comparison? := some display } else goal
+          displayGoals := displayGoals.push { goal with comparison? := some display }
+      else
+        let ci := { result.ctxInfo with mctx := if result.useAfter then ti.mctxAfter else ti.mctxBefore }
+        let goalIds := if result.useAfter then ti.goalsAfter else ti.goalsBefore
+        let goals ← ci.runMetaM {} <| goalIds.toArray.mapM Lean.Widget.goalToInteractive
+        for goal in goals do
+          RequestM.checkCancelled
+          let (displayGoal?, nextCodes) ← displayIrisGoalAt? goal displayGoals.size codes
+          codes := nextCodes
+          if let some displayGoal := displayGoal? then
+            displayGoals := displayGoals.push displayGoal
     RequestM.checkCancelled
     return { display := (toJson ({ goals := displayGoals } : WidgetState)).compress, codes }
 

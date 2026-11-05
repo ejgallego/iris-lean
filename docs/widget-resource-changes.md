@@ -1,6 +1,6 @@
 # Proposal: compare Iris resources across proof steps
 
-**Round B: a bounded tactic-local demo prototype is now implemented.** The Iris
+**Round D: the tactic-local prototype annotates its before-state in place.** The Iris
 authors’ feedback will decide whether this becomes a feature. Pinning and token
 diff mapping below remain proposals. Keep this beside Tactic state.
 Lean's built-in diff already covers much of “what changed in this expression?”
@@ -16,7 +16,7 @@ information and `diffInteractiveGoals` to decorate `CodeWithInfos`; native
 `InteractiveCode` renders those tags. Our separately printed propositions omit them.
 
 Possible added value is **both states visible together, grouped by Iris resource
-identity**: changed, added, removed/unpaired and preserved rows. Heap's `Hl` goes
+identity**, annotating changed and added resources, context departures, and split destinations. Unchanged rows stay quiet. Heap's `Hl` goes
 from `l ↦ some v` to `l ↦ some v'`; `Hframe` stays preserved. SpinLock's `Hpt`
 changes to the `false` cell and loses later; `Hcond` loses later while `Hinv`,
 `Hl : locked γ` and `HR` remain. Show target/mask changes separately.
@@ -74,9 +74,14 @@ The prototype uses `FileWorker.findGoalsAt?`, the same tactic selection as Tacti
 state, and assignment reachability from `mctxAfter` for goal ancestry. It compares
 instantiated proposition Exprs under the two saved contexts, pairs only `IVarId`,
 and refuses ambiguous ancestry, duplicate IDs or changed shared local bindings.
-All branches remain visible; a closed goal is labelled closed. Existing goal
-cards stay intact with an additional after-resource section. New terms are native;
-old terms are plain text. No pinning, target diff or path rebasing is implemented.
+All branches remain visible; a closed goal is labelled closed. The card always shows the selected tactic’s before-state, even where the normal
+infoview selects the after side. It preserves that state’s context order. Changed
+rows carry a subordinate `↳ tactic:` and native new proposition; unchanged rows
+have no annotation. Context departures say “no longer in context”, additions
+follow the existing rows in their resulting context, and split destinations use
+the tactic’s full resulting-goal order. Targets are compared with the same
+saved-context guards and annotated too. Both sides use native `InteractiveCode`.
+No pinning, subterm highlighting or path rebasing is implemented.
 
 Feedback question: does this resource comparison add enough beyond Tactic state's
 diff to retain and refine?

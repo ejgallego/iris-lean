@@ -190,32 +190,18 @@ public def glyph : Entry := style #[
   ("fontWeight", "800")
 ]
 
-public def comparisonSection : Entry := style #[
-  ("borderTop", border borderColor), ("marginTop", "3px"), ("paddingTop", "3px"),
-  ("minWidth", "0")
-]
-
-public def comparisonHeading : Entry := style #[
-  ("fontWeight", "650"), ("overflowWrap", "anywhere"), ("marginBottom", "2px")
-]
-
-public def resourceChange : Entry := style #[
-  ("display", "grid"), ("gridTemplateColumns", "minmax(min-content, auto) minmax(0, 1fr)"),
-  ("gap", "2px 5px"), ("minWidth", "0"), ("padding", "1px 2px")
-]
-
-public def resourceStatus : Entry := style #[
-  ("color", muted), ("fontSize", "0.9em")
-]
-
-public def oldResource : Entry := style #[
+/-- Annotations belong to the original row, spanning its name and proposition columns. -/
+public def annotation (hasTerm : Bool) : Entry := style #[
+  ("gridColumn", "1 / -1"), ("display", if hasTerm then "grid" else "block"),
+  ("gridTemplateColumns", "minmax(0, max-content) minmax(0, 1fr)"),
+  ("columnGap", "4px"), ("minWidth", "0"), ("paddingLeft", "1em"),
   ("color", muted), ("fontFamily", editorFont), ("fontSize", editorSize),
-  ("whiteSpace", "pre-wrap"), ("overflowWrap", "anywhere")
+  ("lineHeight", "1.3"), ("overflowWrap", "anywhere")
 ]
 
-public def removedTerm : Entry := style #[
-  ("color", muted), ("fontFamily", editorFont), ("fontSize", editorSize),
-  ("textDecoration", "line-through"), ("whiteSpace", "pre-wrap"), ("overflowWrap", "anywhere")
+public def changeSummary : Entry := style #[
+  ("color", muted), ("minWidth", "0"), ("whiteSpace", "nowrap"),
+  ("overflow", "hidden"), ("textOverflow", "ellipsis"), ("marginBottom", "2px")
 ]
 
 end Iris.ProofMode.Widget.Style
