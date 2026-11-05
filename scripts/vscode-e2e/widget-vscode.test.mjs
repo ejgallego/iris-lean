@@ -193,7 +193,7 @@ try {
 
   await check('native expression diffs mark changes and leave surviving wrapper bodies quiet', async () => {
     const states = [];
-    for (const [marker, tactic] of [['heap-store', 'wp_store'], ['spin-open', 'wp_store'], ['spin-stored', 'imodintro']]) {
+    for (const [marker, tactic] of [['heap-store', 'wp_store'], ['spin-open', 'wp_store'], ['spin-stored', 'imodintro'], ['spin-frame', 'iframe Hpt']]) {
       await at('widget-position-' + marker);
       await waitWidget('diff ' + marker, w => w.tactics?.includes(tactic) &&
         (marker === 'heap-store' ? w.text.includes('Hframe') : w.text.includes('Hinv')));
@@ -234,8 +234,19 @@ try {
         assert(row('Hcond').before.removed.join('').trim() === '▷' && !row('Hcond').after[0].inserted.length, 'later strip must highlight only the wrapper');
         assert(['Hinv','Hl','HR','Hcont'].every(n => !row(n).before.removed.length && !row(n).before.inserted.length), 'unchanged SpinLock resource highlighted');
         assert(state.targetBefore.removed.length && state.targetAfter[0].inserted.length, 'SpinLock target diff missing');
-      } else {
+      } else if (marker === 'spin-stored') {
         assert(state.targetBefore.removed.join('').includes('|={') && !state.targetAfter[0].inserted.length, 'imodintro should remove only the update wrapper');
+      }
+      if (marker === 'spin-frame') {
+        assert(state.targetBefore.removed.join('').includes('∃ b') &&
+          state.targetAfter[0].inserted.join('').includes('if false'), 'frame target diff missing');
+        assert(!state.targetBefore.removed.join('').includes('Φ') &&
+          !state.targetAfter[0].inserted.join('').includes('Φ'), 'unchanged continuation highlighted');
+        assert(['Hinv','Hl','HR','Hcont','Hcond'].every(n =>
+          !row(n).before.removed.length && !row(n).before.inserted.length), 'identity-preserved resource highlighted');
+        // Retain the ordinary Tactic-state spans for the presenter comparison.
+        state.standardDiff = await infoviewEval(vs, `(() => [...document.querySelectorAll('.removed-text, .inserted-text')]
+          .filter(e => !e.closest('[data-iris-proof-mode-widget]')).map(e => ({ text: e.textContent, classes: e.className })))()`);
       }
       const shot = await vs.workbench.send('Page.captureScreenshot', { format: 'png' });
       writeFileSync(`${vs.run}/round-h-${marker}.png`, Buffer.from(shot.data, 'base64'));

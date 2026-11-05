@@ -120,6 +120,35 @@ elab "check_tactic_diff " tactic:tactic : tactic => do
         unless markedText combined == b.stripTags do throwError "previous branch's diff lost"
   unless checked do throwError "Hcond comparison missing"
 
+elab "check_frame_diff " tactic:tactic : tactic => do
+  let before ← getMCtx
+  let goalsBefore ← getGoals
+  evalTactic tactic
+  let context : ContextInfo := { (← CommandContextInfo.save) with }
+  let info : TacticInfo := {
+    elaborator := `check_frame_diff, stx := tactic
+    mctxBefore := before, goalsBefore
+    mctxAfter := ← getMCtx, goalsAfter := ← getGoals }
+  let comparisons ← GoalChanges.compareTactic context info
+  unless comparisons.size == 1 && comparisons.all (·.branches.size == 1) do
+    throwError "expected one frame comparison"
+  for comparison in comparisons do
+    for branch in comparison.branches do
+      let some after := branch.after? | throwError "missing after state"
+      let b ← comparison.before.context.runMetaM {} <| comparison.before.id.withContext do
+        Lean.Widget.ppExprTagged comparison.before.target delabIProp
+      let a ← after.context.runMetaM {} <| after.id.withContext do
+        Lean.Widget.ppExprTagged after.target delabIProp
+      let (bd, ad) ← after.context.runMetaM {} <| after.id.withContext do
+        Widget.Diff.decorate comparison.before.target after.target b a
+      -- The existential/if roots lost their printer tags. Their printed later
+      -- encloses the change; the unchanged continuation and hidden instances do not.
+      unless markedText bd == "(▷ ∃ b, l ↦ some #b ∗ if b = true then True else locked γ ∗ R)" &&
+          markedText ad == "(▷ if false = true then True else locked γ ∗ R)" do
+        throwError "frame target diff: '{markedText bd}', '{markedText ad}'"
+      unless bd.stripTags == b.stripTags && ad.stripTags == a.stripTags do
+        throwError "frame target diff changed text"
+
 section Lock
 
 open HeapLang HeapLang.SpinLock
@@ -146,7 +175,7 @@ example (γ : GName) (lk : Val) (R : IProp GF) :
   icases G1 with ⟨%b, Hpt, Hcond⟩
   check_tactic_diff wp_store
   imodintro
-  iframe Hpt
+  check_frame_diff iframe Hpt
   simp only [Bool.false_eq_true, ↓reduceIte]; iframe
   iapply Hcont; itrivial
 

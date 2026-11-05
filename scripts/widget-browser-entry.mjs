@@ -334,6 +334,11 @@ async function run() {
     const framed = JSON.parse((await host.snapshot(config.spinFrame)).display).goals[0];
     assertChanges(framed, { Hl: "preserved", HR: "preserved", Hcont: "preserved", Hinv: "preserved",
       Hcond: "preserved", Hpt: "removed" }, "iframe Hpt");
+    const frameTarget = panel().querySelector('section[aria-label="Target"]');
+    const frameBefore = [...frameTarget.firstElementChild.querySelectorAll('.removed-text')].map(e => e.textContent).join('');
+    const frameAfter = [...frameTarget.querySelectorAll('[data-annotation-kind="target"] .inserted-text')].map(e => e.textContent).join('');
+    check(frameBefore.includes('∃ b') && frameAfter.includes('if false') &&
+      !frameBefore.includes('Φ') && !frameAfter.includes('Φ'), "frame target diff keeps the continuation quiet");
     await move({ line: config.heapStore.line - 1, character: 4 });
     check(!panel().querySelector('[data-comparison-summary]'), "comment outside tactic has the ordinary view");
     // Inside the selected tactic, Lean may choose its after side. The widget still

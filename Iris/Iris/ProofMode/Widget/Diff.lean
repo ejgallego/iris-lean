@@ -90,6 +90,23 @@ private def restoreWrapperRoot (before : Expr) (code : CodeWithInfos) : MetaM Co
     if ex.isInterrupt then throw ex
     return code
 
+/-- Unexpanders can discard a changed subterm's root tag. If its descendants
+are still printed, mark the nearest printed ancestor. Ignore entirely hidden
+arguments (such as instances); they must not colour an otherwise quiet term. -/
+private def visibleChanges (changes : SubExpr.PosMap Vendor.Lean435.ExprDiffTag)
+    (code : CodeWithInfos) : SubExpr.PosMap Vendor.Lean435.ExprDiffTag := Id.run do
+  let (_, positions) := (code.forM fun info _ => modify (·.push info.subexprPos)
+    : StateM (Array SubExpr.Pos) Unit).run #[]
+  let encloses (outer inner : SubExpr.Pos) := outer.toArray.toList.isPrefixOf inner.toArray.toList
+  let mut result := changes
+  for (pos, tag) in changes.toList do
+    if positions.contains pos || !positions.any (encloses pos) then continue
+    let parent := positions.foldl (init := none) fun best candidate =>
+      if encloses candidate pos && best.all (fun p => p.depth < candidate.depth) then
+        some candidate else best
+    if let some parent := parent then result := result.insert parent tag
+  return result
+
 /-- Both codes must have been printed independently at root, in their own saved
 contexts. Diffing runs in the after-context; native semantic contexts stay intact.
 If the printer hid the surviving argument, use Lean's conservative whole-term diff. -/
@@ -103,6 +120,9 @@ def decorate (before after : Expr) (beforeCode afterCode : CodeWithInfos) :
       if hasPosition keep beforeCode then
         return (tagWrapper keep none beforeCode, afterCode)
     let diff ← Vendor.Lean435.exprDiff before after
+    let diff := { diff with
+      changesBefore := visibleChanges diff.changesBefore beforeCode
+      changesAfter := visibleChanges diff.changesAfter afterCode }
     return (← Vendor.Lean435.addDiffTags false diff beforeCode,
       ← Vendor.Lean435.addDiffTags true diff afterCode)
   catch ex =>
