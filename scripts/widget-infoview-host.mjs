@@ -44,7 +44,7 @@ export async function createHost(container, config, { intercept, panelProps = pr
       const value = await post("/call", { id: record.id, params: next });
       if (next.method === "Lean.Widget.getWidgets") {
         for (const widget of value.widgets)
-          if (["Iris.ProofMode.Widget.createComponent", "IrisTest.ProofMode.WidgetTour.createComponent"].includes(widget.props.irPackage?.entry)) widgetHashes.add(String(widget.javascriptHash));
+          if (widget.props.irPackage?.entry === "Iris.ProofMode.Widget.createComponent") widgetHashes.add(String(widget.javascriptHash));
       }
       if (next.method === "Lean.Vir.Infoview.buildIRPackage" && config.packageDelayMs) await pause(config.packageDelayMs);
       return value;

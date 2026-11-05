@@ -54,12 +54,6 @@ including the old/new proposition text, preserved resources and native new-side
 terms. Cursor waits identify the selected tactic so the new after-view cannot
 make a stale snapshot accidentally satisfy the next position's predicate.
 
-Round C adds the demo-only guided tour (17 checks total): Next and Prev move the
-real editor cursor to the marker-resolved position and change the talking points;
-manual cursor movement selects the matching step or dims the preceding one;
-the final feedback step disables Next. An unsaved line insertion verifies that
-navigation resolves the live buffer instead of using compiled line numbers.
-The SpinLock checks also assert that the resource comparison precedes the
-current-state body. The original collapse and typing checks remain unchanged.
-The native-definition round trip waits for both the editor and infoview to
-follow each file change before sending the next cursor move.
+Round G removes the guided tour and its four checks. The remaining 19 checks
+cover native terms/navigation, annotations, split distribution, mask/invariant
+folding, before-state labelling and continuity while moving or typing.

@@ -21,8 +21,7 @@ annotation, `imodintro`'s target-only change, `iframe` departures, split distrib
 and the existing card identity/collapse checks. Screenshots of Heap store,
 SpinLock store, `imodintro` and the split are retained in `.tmp/round-d/`.
 
-Validation on 2026-11-05: `lake build Iris IrisTest +Iris.ProofMode.Widget:vir
-+IrisTest.ProofMode.WidgetTour:vir`, `lake test`, runtime package verification,
+Validation on 2026-11-05: `lake build Iris IrisTest +Iris.ProofMode.Widget:vir`, `lake test`, runtime package verification,
 and **20/20** real VS Code checks. Browser checks pass at light 360px/14px, dark
 320px/22px (500ms package delay) and high contrast 280px/28px. The browser pointer
 uses a painted text fragment for wrapped native leaves, rather than their bounding
@@ -43,8 +42,7 @@ absent. Model assertions cover changed, target-only, unchanged, closed and
 unavailable comparisons. The browser checks the label even at an after-side
 cursor position; the real VS Code gate adds a comment-to-after-side transition
 and passes **21/21**, including the existing continuity checks. Validation:
-`lake build IrisTest +Iris.ProofMode.Widget:vir
-+IrisTest.ProofMode.WidgetTour:vir`, `lake test`,
+`lake build IrisTest +Iris.ProofMode.Widget:vir`, `lake test`,
 `node scripts/widget-browser-smoke.mjs`, and
 `node scripts/vscode-e2e/widget-vscode.test.mjs`. Real-host evidence:
 `.tmp/vscode-e2e-runs/2026-11-05T15-36-31-328Z/`.
@@ -82,52 +80,13 @@ ordinary browser regression and **23/23 real VS Code checks** pass. Evidence:
 `.tmp/vscode-e2e-runs/2026-11-05T15-53-41-025Z/`.
 The SpinLock screenshot is `.tmp/round-f/spin-open.png`.
 
-## Guided demo tour (Round C)
+## Tour removal (Round G)
 
-The tour steps live in `IrisTest.ProofMode.WidgetTour.Model`, beside the demo.
-`check_widget_tour` checks their references against the complete `WidgetDemo`
-source. Missing and duplicate markers are build errors; the model tests also
-cover invalid destinations, line insertion, exact selection, neutral selection
-and the nearest preceding step. Actual negative builds, with one marker removed
-or duplicated, both fail with the expected count (0 or 2).
-
-The separate Lean-authored tour uses VIR's `EditorContext` and
-`EditorConnection.revealPosition`. Its server resolves destinations from the
-current document buffer on each position/revision; the native destination
-objects are retained directly. Stale replies and navigation are retired with
-the effect. The production widget does not import the tour. A named alias of
-VIR's loader gives the two local panels distinct infoview identities while
-sharing the same JavaScript source. Reusing the same module name caused React
-key collisions in infoview 0.13; the browser gate caught them.
-
-Round C passed **17/17** real VS Code checks: the prior thirteen checks plus Next,
-Prev, manual step sync (including dimmed between-step text and final feedback),
-and navigation after an unsaved line insertion. It verifies the editor's actual
-URI/line/character, not just a callback. The original DOM-identity/collapse tests
-still passed. At that checkpoint, resource comparisons preceded the current-state
-body; Round D supersedes that separate section with inline annotations. This moves the useful rows earlier, but
-does not guarantee they fit above the fold beneath a long normal Tactic state.
-
-Validation on 2026-11-04: focused Lake build including `WidgetTour.Test`, both VIR
-packages and RPC fixtures; `lake test`; runtime package verification; browser
-gate at light 360px/14px, dark 320px/22px with 500ms package delay, and high
-contrast 280px/28px. The browser gate checks the same tour navigation, neutral
-initial state, panel order and unsaved line insertion. No React key warning
-remains. The real-host evidence is
-`.tmp/vscode-e2e-runs/2026-11-04T19-56-11-776Z/`; other logs and screenshots are
-under `.tmp/round-c/`.
-The separate `--demo` probe also traverses all eight steps and back, checking
-that reveal updates the source highlight and proof-position selector.
-
-Two test synchronization failures are retained there. The delayed-package
-browser run first moved before the initial tour was ready; the gate now checks
-that neutral initial state before moving. A VS Code run passed 16/17 but the
-native-definition round trip left the entire infoview at the previous cursor
-position. The test now waits for the infoview to follow both file changes before
-issuing the next cursor move, in addition to checking the actual editor. This
-is test synchronization, not a production workaround or an upstream fix claim.
-Tour button input in the VS Code gate is synthetic DOM activation; physical
-keyboard navigation and full accessibility remain outside this acceptance.
+The demo-only guided tour and its four VS Code checks were removed. All proof
+position markers remain; use the presenter list in the runbook. Earlier validation
+counts above describe their historical checkpoints. The tour-free build and
+browser regression pass, as do all 19 remaining real VS Code checks
+(`.tmp/round-g/part1-*.log`).
 
 ## Tactic-local resource prototype (Round B)
 

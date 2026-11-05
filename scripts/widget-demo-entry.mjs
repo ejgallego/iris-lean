@@ -12,8 +12,6 @@ const positions = [
   ["spinOpen", "SpinLock · 1. Open invariant", "Inside release_spec: Hinv is persistent. Hpt owns the lock cell, Hcond records its old state, and Hl/HR supply the ghost token and protected resource. The target stores false under a reduced mask."],
   ["spinStored", "SpinLock · 2. After store", "Hpt now owns the unlocked cell. The target restores the invariant and mask before returning to the caller's continuation; Hl and HR are needed to close the invariant."],
   ["spinFrame", "SpinLock · 3. Frame the cell", "iframe Hpt: the annotation under Hpt says “no longer in context”; the target reduces."],
-  ["tourHow", "Tour · How VIR is used", "The tour and proof view are Lean-authored VIR components."],
-  ["tourFeedback", "Tour · Feedback", "The final tour step contains the questions for the Iris authors."],
   ["contexts", "Contexts", "isplitr [HQ HS]: HQ and HS go to goal 2. HP and HQR remain in both goals."],
   ["split", "Split goals", "Expand the second goal. Hover over the shared P in each goal independently."],
   ["binders", "Nested binders", "Hover over n and m before introduction; their types come from saved binder contexts."],

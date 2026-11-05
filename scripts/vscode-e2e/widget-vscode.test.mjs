@@ -50,66 +50,6 @@ try {
   vs = await launch({ workspace: iris });
   await vs.driver({ op: 'open', file });
 
-  const tour = () => infoviewEval(vs, `(() => {
-    const t = document.querySelector('[data-iris-widget-tour]');
-    if (!t) return undefined;
-    return { index: t.dataset.tourStep, exact: t.dataset.tourExact, busy: t.getAttribute('aria-busy'), text: t.innerText,
-      prevDisabled: t.querySelector('[data-tour-prev]').disabled, nextDisabled: t.querySelector('[data-tour-next]').disabled };
-  })()`);
-  const tourAt = index => vs.until(`tour step ${index}`, async () => {
-    const t = await tour(); return t?.index === String(index) && t.exact === 'true' && t.busy === 'false' ? t : undefined;
-  }, 90000, 500);
-  const tourClick = direction => infoviewEval(vs, `(() => {
-    document.querySelector('[data-tour-${direction}]').click(); return true;
-  })()`);
-
-  await check('tour Next moves the real editor cursor', async () => {
-    await at('widget-position-heap-store'); await tourAt(0);
-    const expected = await vs.driver({ op: 'find', marker: 'widget-position-heap-load' });
-    await tourClick('next'); const t = await tourAt(1);
-    const actual = await vs.driver({ op: 'activeEditor' });
-    assert(actual.uri.endsWith('/WidgetDemo.lean') && actual.line === expected.line && actual.character === expected.character,
-      `Next cursor mismatch: ${JSON.stringify(actual)}`);
-    assert(t.text.includes('wp_load only changes the goal.') && t.text.includes('Step 2 of 9'), 'step text did not change');
-    return { actual, text: t.text };
-  });
-  await check('tour Prev returns to the preceding step', async () => {
-    const expected = await vs.driver({ op: 'find', marker: 'widget-position-heap-store' });
-    await tourClick('prev'); const t = await tourAt(0);
-    const actual = await vs.driver({ op: 'activeEditor' });
-    assert(actual.line === expected.line && actual.character === expected.character, 'Prev cursor mismatch');
-    assert(t.prevDisabled && t.text.includes('wp_store updates Hl; Hframe untouched.'), 'first-step state');
-    return { actual, text: t.text };
-  });
-  await check('tour follows manual cursor movement and reaches feedback', async () => {
-    await at('widget-position-spin-open'); const spin = await tourAt(3);
-    assert(spin.text.includes('opened invariant'), 'manual cursor did not select SpinLock');
-    const marker = await vs.driver({ op: 'find', marker: 'widget-position-spin-stored', offset: 0 });
-    await vs.driver({ op: 'cursor', ...marker });
-    await vs.until('dimmed preceding step', async () => { const t = await tour(); return t?.index === '3' && t.exact === 'false' && t.busy === 'false'; }, 30000);
-    await tourClick('prev'); await tourAt(3);
-    const expected = await vs.driver({ op: 'find', marker: 'widget-position-spin-open' });
-    const actual = await vs.driver({ op: 'activeEditor' });
-    assert(actual.line === expected.line && actual.character === expected.character, 'Prev skipped the dimmed SpinLock step');
-
-    // The first step must also remain reachable with Prev while it is dimmed.
-    const betweenFirst = await vs.driver({ op: 'find', marker: 'widget-position-heap-load', offset: 0 });
-    await vs.driver({ op: 'cursor', ...betweenFirst });
-    await vs.until('dimmed first step', async () => {
-      const t = await tour(); return t?.index === '0' && t.exact === 'false' && t.busy === 'false' && !t.prevDisabled;
-    }, 30000);
-    await tourClick('prev'); const first = await tourAt(0);
-    const firstExpected = await vs.driver({ op: 'find', marker: 'widget-position-heap-store' });
-    const firstActual = await vs.driver({ op: 'activeEditor' });
-    assert(firstActual.line === firstExpected.line && firstActual.character === firstExpected.character && first.prevDisabled,
-      'Prev should reach the first step and then become disabled');
-    await at('widget-position-how-vir'); const vir = await tourAt(7);
-    assert(vir.text.includes('Lean-authored React (VIR)'), 'VIR explanation missing');
-    await at('widget-position-feedback'); const feedback = await tourAt(8);
-    assert(feedback.nextDisabled && feedback.text.includes('Which proof'), 'feedback should finish the tour');
-    return { spin: spin.text, feedback: feedback.text };
-  });
-
   await check('heap store: contexts and target', async () => {
     await at('widget-position-heap-store');
     const w = await waitWidget('heap store widget', w => w.present && w.text.includes('Hframe'), 240000);
@@ -130,8 +70,6 @@ try {
     assert(w.rows.find(r => r.name === 'Hl')?.text === 'l ↦ some v', 'before proposition stays above its annotation');
     assert(w.summary === 'before wp_store · changes Hl and the goal' && w.targets.length === 1, 'store summary and goal annotation');
     assert(!w.text.includes('was:') && !w.text.includes('preserved'), 'redundant comparison text remains');
-    const t = await tourAt(0);
-    assert(t.text.includes('wp_store updates Hl; Hframe untouched.') && t.text.includes('↳ under Hl and under ⊢.'), 'store tour disagrees with annotations');
     return w;
   });
 
@@ -140,8 +78,6 @@ try {
     const w = await waitWidget('heap load widget', w => w.present && w.tactics.includes("wp_load") && w.text.includes("l ↦ some v'"));
     assert(w.text.includes("l' ↦ some w"), 'Hframe changed');
     assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'before wp_load · only the goal changes', 'load must leave hypothesis rows quiet');
-    const t = await tourAt(1);
-    assert(t.text.includes('wp_load only changes the goal.') && t.text.includes('No hypothesis annotations; ↳ under ⊢.'), 'load tour disagrees');
     return w;
   });
 
@@ -210,7 +146,7 @@ try {
       await vs.driver({ op: 'open', file });
       await vs.until('infoview returns to the demo file', () => infoviewEval(vs,
         `/WidgetDemo\\.lean:\\d+/.test(document.body.innerText)`), 90000, 500);
-      await tourAt(0);
+      await waitWidget('returned to store', w => w.tactics?.includes('wp_store') && w.text.includes('Hframe'));
     }
   });
 
@@ -221,8 +157,6 @@ try {
     assert(w.changes.length === 2 && w.changes.every(r => r.status === 'gone' && r.text === '↳ iframe: no longer in context'),
       'iframe must report context departures without inferring consumption');
     assert(w.targets.length === 1 && w.targets[0].includes("⌜v' = v'⌝"), 'iframe reduces the target');
-    const t = await tourAt(2);
-    assert(t.text.includes('iframe discharges both cells.') && t.text.includes('pure equality'), 'postcondition tour disagrees');
     return w;
   });
 
@@ -240,8 +174,6 @@ try {
       if (marker.endsWith('stored')) {
         assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'before imodintro · only the goal changes',
           'imodintro must annotate only the target');
-        const t = await tourAt(4);
-        assert(t.text.includes('imodintro only changes the goal.') && t.text.includes('The update modality under ⊢.'), 'imodintro tour disagrees');
       }
       return w;
     });
@@ -255,8 +187,6 @@ try {
     assert(cell.native && cell.text.includes('#false') && !cell.text.includes('▷'), 'new cell loses its later');
     assert(condition.text.includes('if b') && !condition.text.includes('▷'), 'new condition loses its later');
     assert(w.targets.length === 1 && w.summary === 'before wp_store · changes Hpt, Hcond and the goal', 'SpinLock goal and summary');
-    const t = await tourAt(3);
-    assert(t.text.includes('Store inside the opened invariant.') && t.text.includes('Hpt updated; ▷ stripped from Hpt and Hcond. The other four untouched.'), 'store tour disagrees');
     return w;
   });
 
@@ -309,8 +239,6 @@ try {
     assert(w.changes.length === 1 && w.changes[0].name === 'Hpt' && w.changes[0].status === 'gone' &&
       w.changes[0].text === '↳ iframe: no longer in context', 'neutral context departure on Hpt');
     assert(w.targets.length === 1, 'frame target annotation');
-    const t = await tourAt(5);
-    assert(t.text.includes('iframe Hpt.') && t.text.includes('Hpt leaves the context; ⊢ reduces.'), 'frame tour disagrees');
     return w;
   });
 
@@ -321,9 +249,6 @@ try {
     assert(w.changes.map(r => r.name).join(' ') === 'HQ HS', 'shared persistent resources stay quiet');
     assert(w.changes.every(r => r.status === 'distributed' && r.text === '↳ isplitr: goal 2'), 'spatial destinations');
     assert(w.targets.length === 2 &&  /goal 1 ⊢\s*P/.test(w.targets[0]) && /goal 2 ⊢\s*R ∗ S/.test(w.targets[1]), 'both resulting targets in order');
-    const t = await tourAt(6);
-    assert(t.text.includes('isplitr [HQ HS] distributes spatial ownership.') &&
-      t.text.includes('HQ and HS go to goal 2; HP and HQR remain in both goals.'), 'split tour disagrees');
     return w;
   });
 
@@ -380,18 +305,6 @@ try {
     assert(w.cards[0].expanded === 'false', 'collapse lost after typing');
     assert(w.cards.every((c, i) => c.marked === 'card' + i), `cards remounted after typing: ${JSON.stringify(w.cards)}`);
     return { cards: w.cards };
-  });
-  await check('tour re-resolves markers after an unsaved line insertion', async () => {
-    const marker = await vs.driver({ op: 'find', marker: 'widget-position-heap-store', offset: 0 });
-    await vs.driver({ op: 'cursor', line: marker.line, character: 0 });
-    await vs.driver({ op: 'type', text: '\n' });
-    await at('widget-position-heap-store'); await tourAt(0);
-    const expected = await vs.driver({ op: 'find', marker: 'widget-position-heap-load' });
-    await tourClick('next'); await tourAt(1);
-    const actual = await vs.driver({ op: 'activeEditor' });
-    assert(actual.isDirty && actual.line === expected.line && actual.character === expected.character,
-      `tour used a stale line number: ${JSON.stringify(actual)}`);
-    return { actual, expected };
   });
 } catch (e) {
   results.push({ name: 'harness', ok: false, error: e.message }); console.log(`FAIL harness: ${e.message}`);

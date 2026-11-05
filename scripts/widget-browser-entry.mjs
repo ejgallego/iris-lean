@@ -85,27 +85,6 @@ async function run() {
         }
       },
     });
-    const tour = () => container.querySelector('[data-iris-widget-tour]');
-    const tourAt = async index => wait(`tour step ${index}`, () => tour()?.dataset.tourStep === String(index) &&
-      tour().dataset.tourExact === "true" && tour().getAttribute('aria-busy') === "false");
-    await wait("initial tour ready", () => tour()?.getAttribute('aria-busy') === "false");
-    check(tour().dataset.tourStep === "none", "neutral tour before the first step");
-    await move(config.heapStore); await tourAt(0);
-    check(tour().compareDocumentPosition(panel()) & Node.DOCUMENT_POSITION_FOLLOWING, "tour precedes Iris panel");
-    tour().querySelector('[data-tour-next]').click(); await tourAt(1);
-    check(host.cursor().line === config.heapLoad.line && host.cursor().character === config.heapLoad.character, "Next reveals the marker-resolved editor position");
-    check(tour().textContent.includes('wp_load only changes the goal.'), "Next changes talking points");
-    tour().querySelector('[data-tour-prev]').click(); await tourAt(0);
-    check(host.cursor().line === config.heapStore.line && host.cursor().character === config.heapStore.character, "Prev reveals previous step");
-    check(tour().querySelector('[data-tour-prev]').disabled, "Prev disabled at start");
-    for (const [name, index] of [["spinOpen", 3], ["contexts", 6], ["tourHow", 7], ["tourFeedback", 8]]) {
-      await host.move(config[name]); await tourAt(index);
-    }
-    check(tour().querySelector('[data-tour-next]').disabled &&
-      tour().textContent.includes('Which proof'), "feedback is the final step");
-    await move({ line: config.spinOpen.line + 1, character: 4 });
-    await wait("tour between steps", () => tour()?.dataset.tourStep === "3" && tour().dataset.tourExact === "false" &&
-      tour().getAttribute('aria-busy') === "false");
     await move(config.contexts);
     check(cards().length === 1 && native().length > 0, "one native Iris goal");
     check([...panel().querySelectorAll('li[role="listitem"]')].every(row =>
@@ -346,12 +325,6 @@ async function run() {
     invalidFingerprint = false;
     await move(config.heapStore);
     globalThis.irisCapture = true; await until("screenshot", () => globalThis.irisCaptured);
-    const shift = await post('/edit', { kind: 'tourShift' });
-    await host.edit(shift);
-    await move({ ...config.heapStore, line: config.heapStore.line + 1 }); await tourAt(0);
-    tour().querySelector('[data-tour-next]').click(); await tourAt(1);
-    check(host.cursor().line === config.heapLoad.line + 1 && host.cursor().character === config.heapLoad.character,
-      "tour resolves the current unsaved document after line insertion");
     // Unmount cancels a pending state call; a late error cannot revive the panel.
     const unmount = arm(prefix + "state", config.binders); failure = { server: true };
     await host.move(config.binders); await wait("unmount response held", () => unmount.count > 0);
