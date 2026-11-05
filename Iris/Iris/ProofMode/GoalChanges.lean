@@ -25,6 +25,7 @@ structure SavedGoal where
   id : MVarId
   context : ContextInfo
   iris : IrisGoal
+  target : Expr
   resources : Array Resource
   bindings : Array (FVarId × Expr × Option Expr)
 
@@ -42,7 +43,11 @@ def readGoal? (context : ContextInfo) (id : MVarId) : IO (Option SavedGoal) :=
     let bindings ← (← getLCtx).getFVarIds.mapM fun fvar => do
       let decl ← fvar.getDecl
       return (fvar, ← instantiateMVars decl.type, ← decl.value?.mapM instantiateMVars)
-    return some { id, context, iris, resources := ← collect iris.hyps, bindings }
+    return some {
+      id, context, iris
+      target := ← instantiateMVars iris.goal
+      resources := ← collect iris.hyps
+      bindings }
 
 structure ResourceChange where
   status : ResourceStatus
@@ -51,8 +56,10 @@ structure ResourceChange where
 
 structure Branch where
   id : MVarId
+  index : Nat := 0
   after? : Option SavedGoal
   resources : Array ResourceChange := #[]
+  targetChanged : Bool := false
   unavailable? : Option String := none
 
 structure Comparison where
@@ -68,8 +75,7 @@ private def uniqueIds (resources : Array Resource) : Bool := Id.run do
     seen := seen.push resource.id
   return true
 
-/-- Compare only within one tactic's identity domain. No pretty printing or unification. -/
-def compareResources (before after : SavedGoal) : Except String (Array ResourceChange) := do
+private def checkComparable (before after : SavedGoal) : Except String Unit := do
   unless uniqueIds before.resources && uniqueIds after.resources do
     throw "duplicate resource identities"
   unless before.iris.prop == after.iris.prop && before.iris.bi == after.iris.bi do
@@ -80,6 +86,15 @@ def compareResources (before after : SavedGoal) : Except String (Array ResourceC
     if let some (_, newType, newValue) := after.bindings.find? (·.1 == id) then
       unless type == newType && value == newValue do
         throw "a shared local declaration changed"
+
+/-- Compare instantiated targets under the same context checks as resources. -/
+def compareTarget (before after : SavedGoal) : Except String Bool := do
+  checkComparable before after
+  return before.target != after.target
+
+/-- Compare only within one tactic's identity domain. No pretty printing or unification. -/
+def compareResources (before after : SavedGoal) : Except String (Array ResourceChange) := do
+  checkComparable before after
   let mut changes := #[]
   for resource in after.resources do
     let old? := before.resources.find? (·.id == resource.id)
@@ -122,12 +137,14 @@ def compareTactic (context : ContextInfo) (tactic : TacticInfo) : IO (Array Comp
         result := result.push { before, unavailable? := some "open descendants are absent from the tactic's result" }
     else
       let branches ← children.mapM fun child => do
+        let index := (afterIds.findIdx? (· == child)).getD 0
         let after? ← readGoal? afterContext child
         let some after := after?
-          | return { id := child, after?, unavailable? := some "the resulting goal is not in Iris proof mode" : Branch }
+          | return { id := child, index, after?, unavailable? := some "the resulting goal is not in Iris proof mode" : Branch }
         match compareResources before after with
-        | .ok resources => return { id := child, after?, resources : Branch }
-        | .error reason => return { id := child, after?, unavailable? := some reason : Branch }
+        | .ok resources =>
+          return { id := child, index, after?, resources, targetChanged := before.target != after.target : Branch }
+        | .error reason => return { id := child, index, after?, unavailable? := some reason : Branch }
       result := result.push { before, branches }
   return result
 
