@@ -70,7 +70,7 @@ try {
     const actual = await vs.driver({ op: 'activeEditor' });
     assert(actual.uri.endsWith('/WidgetDemo.lean') && actual.line === expected.line && actual.character === expected.character,
       `Next cursor mismatch: ${JSON.stringify(actual)}`);
-    assert(t.text.includes('Read the value back') && t.text.includes('Step 2 of 8'), 'step text did not change');
+    assert(t.text.includes('wp_load only changes the goal.') && t.text.includes('Step 2 of 9'), 'step text did not change');
     return { actual, text: t.text };
   });
   await check('tour Prev returns to the preceding step', async () => {
@@ -78,7 +78,7 @@ try {
     await tourClick('prev'); const t = await tourAt(0);
     const actual = await vs.driver({ op: 'activeEditor' });
     assert(actual.line === expected.line && actual.character === expected.character, 'Prev cursor mismatch');
-    assert(t.prevDisabled && t.text.includes('A store changes one resource'), 'first-step state');
+    assert(t.prevDisabled && t.text.includes('wp_store updates Hl; Hframe untouched.'), 'first-step state');
     return { actual, text: t.text };
   });
   await check('tour follows manual cursor movement and reaches feedback', async () => {
@@ -103,10 +103,10 @@ try {
     const firstActual = await vs.driver({ op: 'activeEditor' });
     assert(firstActual.line === firstExpected.line && firstActual.character === firstExpected.character && first.prevDisabled,
       'Prev should reach the first step and then become disabled');
-    await at('widget-position-how-vir'); const vir = await tourAt(6);
-    assert(vir.text.includes('React components authored in Lean'), 'VIR explanation missing');
-    await at('widget-position-feedback'); const feedback = await tourAt(7);
-    assert(feedback.nextDisabled && feedback.text.includes('which real proof'), 'feedback should finish the tour');
+    await at('widget-position-how-vir'); const vir = await tourAt(7);
+    assert(vir.text.includes('Lean-authored React (VIR)'), 'VIR explanation missing');
+    await at('widget-position-feedback'); const feedback = await tourAt(8);
+    assert(feedback.nextDisabled && feedback.text.includes('Which proof'), 'feedback should finish the tour');
     return { spin: spin.text, feedback: feedback.text };
   });
 
@@ -130,6 +130,8 @@ try {
     assert(w.rows.find(r => r.name === 'Hl')?.text === 'l ↦ some v', 'before proposition stays above its annotation');
     assert(w.summary === 'wp_store changes Hl and the goal' && w.targets.length === 1, 'store summary and goal annotation');
     assert(!w.text.includes('was:') && !w.text.includes('preserved'), 'redundant comparison text remains');
+    const t = await tourAt(0);
+    assert(t.text.includes('wp_store updates Hl; Hframe untouched.') && t.text.includes('↳ under Hl and under ⊢.'), 'store tour disagrees with annotations');
     return w;
   });
 
@@ -138,6 +140,8 @@ try {
     const w = await waitWidget('heap load widget', w => w.present && w.tactics.includes("wp_load") && w.text.includes("l ↦ some v'"));
     assert(w.text.includes("l' ↦ some w"), 'Hframe changed');
     assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'wp_load only changes the goal', 'load must leave hypothesis rows quiet');
+    const t = await tourAt(1);
+    assert(t.text.includes('wp_load only changes the goal.') && t.text.includes('No hypothesis annotations; ↳ under ⊢.'), 'load tour disagrees');
     return w;
   });
 
@@ -217,6 +221,8 @@ try {
     assert(w.changes.length === 2 && w.changes.every(r => r.status === 'gone' && r.text === '↳ iframe: no longer in context'),
       'iframe must report context departures without inferring consumption');
     assert(w.targets.length === 1 && w.targets[0].includes("⌜v' = v'⌝"), 'iframe reduces the target');
+    const t = await tourAt(2);
+    assert(t.text.includes('iframe discharges both cells.') && t.text.includes('pure equality'), 'postcondition tour disagrees');
     return w;
   });
 
@@ -234,6 +240,8 @@ try {
       if (marker.endsWith('stored')) {
         assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'imodintro only changes the goal',
           'imodintro must annotate only the target');
+        const t = await tourAt(4);
+        assert(t.text.includes('imodintro only changes the goal.') && t.text.includes('The update modality under ⊢.'), 'imodintro tour disagrees');
       }
       return w;
     });
@@ -247,6 +255,8 @@ try {
     assert(cell.native && cell.text.includes('#false') && !cell.text.includes('▷'), 'new cell loses its later');
     assert(condition.text.includes('if b') && !condition.text.includes('▷'), 'new condition loses its later');
     assert(w.targets.length === 1 && w.summary === 'wp_store changes Hpt, Hcond and the goal', 'SpinLock goal and summary');
+    const t = await tourAt(3);
+    assert(t.text.includes('Store inside the opened invariant.') && t.text.includes('Hpt updated; ▷ stripped from Hpt and Hcond. The other four untouched.'), 'store tour disagrees');
     return w;
   });
 
@@ -256,6 +266,8 @@ try {
     assert(w.changes.length === 1 && w.changes[0].name === 'Hpt' && w.changes[0].status === 'gone' &&
       w.changes[0].text === '↳ iframe: no longer in context', 'neutral context departure on Hpt');
     assert(w.targets.length === 1, 'frame target annotation');
+    const t = await tourAt(5);
+    assert(t.text.includes('iframe Hpt.') && t.text.includes('Hpt leaves the context; ⊢ reduces.'), 'frame tour disagrees');
     return w;
   });
 
@@ -266,6 +278,9 @@ try {
     assert(w.changes.map(r => r.name).join(' ') === 'HQ HS', 'shared persistent resources stay quiet');
     assert(w.changes.every(r => r.status === 'distributed' && r.text === '↳ isplitr: goal 2'), 'spatial destinations');
     assert(w.targets.length === 2 &&  /goal 1 ⊢\s*P/.test(w.targets[0]) && /goal 2 ⊢\s*R ∗ S/.test(w.targets[1]), 'both resulting targets in order');
+    const t = await tourAt(6);
+    assert(t.text.includes('isplitr [HQ HS] distributes spatial ownership.') &&
+      t.text.includes('HQ and HS go to goal 2; HP and HQR remain in both goals.'), 'split tour disagrees');
     return w;
   });
 

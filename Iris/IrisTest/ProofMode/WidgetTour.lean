@@ -150,7 +150,7 @@ def app : RuntimeM (FunctionComponent PanelWidgetProps) := do
     let content ← if let some i := index then do
       let step := steps[i]!
       jsx%{<div><strong>{Html.text step.title}</strong>
-        <div>{Html.text step.text}</div><div>{Html.text step.look}</div></div>}
+        <div>{Html.text step.look}</div></div>}
     else Html.text "Start with Next, or move to a tour marker in this file."
     let error : Js.Array Node ← match state.value.error with
       | none => Js.Array.empty

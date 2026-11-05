@@ -1,8 +1,45 @@
 # Widget testing and use-case surface
 
+## In-place expert annotations (Round D)
+
+The card shows the selected tactic's before-state in its own context order.
+`GoalChanges` tests, independent of VIR, check instantiated target comparison
+alongside typed `IVarId` pairing on HeapLang and SpinLock. They cover target-only
+changes, an unchanged tactic, additions, departures, branching, closure and the
+existing refusal cases. `WidgetModel` checks the presentation rules: quiet
+unchanged rows, persistence changes, additions in context order, neutral “no
+longer in context”, every split destination/target, summaries and unavailable
+comparisons. No text or name matching establishes resource identity.
+
+The browser gate checks native new propositions and targets, additions, split
+distribution, unchanged-row silence, departure wording, and the stable before-card
+even at after-side cursor positions. Held replies, stale semantic actions,
+refresh failure, cursor/typing collapse continuity and leaving Iris remain covered.
+The real VS Code gate checks all nine terse tour headlines against rendered proof
+states, native hover on an annotated new value, definition navigation from an
+annotation, `imodintro`'s target-only change, `iframe` departures, split distribution,
+and the existing card identity/collapse checks. Screenshots of Heap store,
+SpinLock store, `imodintro` and the split are retained in `.tmp/round-d/`.
+
+Validation on 2026-11-05: `lake build Iris IrisTest +Iris.ProofMode.Widget:vir
++IrisTest.ProofMode.WidgetTour:vir`, `lake test`, runtime package verification,
+and **20/20** real VS Code checks. Browser checks pass at light 360px/14px, dark
+320px/22px (500ms package delay) and high contrast 280px/28px. The browser pointer
+uses a painted text fragment for wrapped native leaves, rather than their bounding
+box's potentially empty centre. Real-host evidence:
+`.tmp/vscode-e2e-runs/2026-11-05T14-22-50-903Z/`.
+
+At SpinLock, the context's order itself changes after `wp_store`: the before-store
+state has `Hpt, Hcond`, while the before-`imodintro` state has `Hcond, Hpt`. Each
+card follows its own before-state. Long SpinLock cards still require scrolling
+below the standard Tactic state. Native enclosing-subterm selection and term
+keyboard policy remain gaps. Subterm highlighting is deferred: Lean 4.35 exports
+whole-goal diffing but keeps its per-expression helpers internal.
+
+
 ## Guided demo tour (Round C)
 
-The eight steps live in `IrisTest.ProofMode.WidgetTour.Model`, beside the demo.
+The tour steps live in `IrisTest.ProofMode.WidgetTour.Model`, beside the demo.
 `check_widget_tour` checks their references against the complete `WidgetDemo`
 source. Missing and duplicate markers are build errors; the model tests also
 cover invalid destinations, line insertion, exact selection, neutral selection
@@ -18,12 +55,12 @@ VIR's loader gives the two local panels distinct infoview identities while
 sharing the same JavaScript source. Reusing the same module name caused React
 key collisions in infoview 0.13; the browser gate caught them.
 
-The real VS Code gate passes **17/17**: the prior thirteen checks plus Next,
+Round C passed **17/17** real VS Code checks: the prior thirteen checks plus Next,
 Prev, manual step sync (including dimmed between-step text and final feedback),
 and navigation after an unsaved line insertion. It verifies the editor's actual
 URI/line/character, not just a callback. The original DOM-identity/collapse tests
-still pass. Resource comparisons now precede the current-state body; the
-SpinLock checks verify that ordering. This moves the useful rows earlier, but
+still passed. At that checkpoint, resource comparisons preceded the current-state
+body; Round D supersedes that separate section with inline annotations. This moves the useful rows earlier, but
 does not guarantee they fit above the fold beneath a long normal Tactic state.
 
 Validation on 2026-11-04: focused Lake build including `WidgetTour.Test`, both VIR

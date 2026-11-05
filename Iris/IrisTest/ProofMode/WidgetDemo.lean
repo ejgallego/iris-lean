@@ -123,7 +123,7 @@ end Lock
 -- widget-position-feedback
 #check Iris.ProofMode.parseIrisGoal?
 
--- Check all eight references against this complete source, including the pause points above.
+-- Check all nine references against this complete source, including the pause points above.
 check_widget_tour
 
 end IrisTest.ProofMode.WidgetDemo

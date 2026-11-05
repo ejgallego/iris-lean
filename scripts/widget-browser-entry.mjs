@@ -94,15 +94,15 @@ async function run() {
     check(tour().compareDocumentPosition(panel()) & Node.DOCUMENT_POSITION_FOLLOWING, "tour precedes Iris panel");
     tour().querySelector('[data-tour-next]').click(); await tourAt(1);
     check(host.cursor().line === config.heapLoad.line && host.cursor().character === config.heapLoad.character, "Next reveals the marker-resolved editor position");
-    check(tour().textContent.includes('Read the value back'), "Next changes talking points");
+    check(tour().textContent.includes('wp_load only changes the goal.'), "Next changes talking points");
     tour().querySelector('[data-tour-prev]').click(); await tourAt(0);
     check(host.cursor().line === config.heapStore.line && host.cursor().character === config.heapStore.character, "Prev reveals previous step");
     check(tour().querySelector('[data-tour-prev]').disabled, "Prev disabled at start");
-    for (const [name, index] of [["spinOpen", 3], ["tourHow", 6], ["tourFeedback", 7]]) {
+    for (const [name, index] of [["spinOpen", 3], ["contexts", 6], ["tourHow", 7], ["tourFeedback", 8]]) {
       await host.move(config[name]); await tourAt(index);
     }
     check(tour().querySelector('[data-tour-next]').disabled &&
-      tour().textContent.includes('which real proof'), "feedback is the final step");
+      tour().textContent.includes('Which proof'), "feedback is the final step");
     await move({ line: config.spinOpen.line + 1, character: 4 });
     await wait("tour between steps", () => tour()?.dataset.tourStep === "3" && tour().dataset.tourExact === "false" &&
       tour().getAttribute('aria-busy') === "false");

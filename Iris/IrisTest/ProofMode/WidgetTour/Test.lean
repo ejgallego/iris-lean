@@ -12,7 +12,7 @@ open IrisTest.ProofMode.WidgetTour
 def source := String.intercalate "\n" <|
   steps.toList.map fun step => "-- " ++ step.marker ++ "\n  skip"
 
-#guard (resolve source).toOption.map Array.size == some 8
+#guard (resolve source).toOption.map Array.size == some 9
 #guard (resolve (source.replace "-- widget-position-heap-load" "-- renamed")).toOption.isNone
 #guard (resolve (source ++ "\n-- widget-position-spin-open\n  skip")).toOption.isNone
 #guard (resolve (source.replace "  skip" "")).toOption.isNone

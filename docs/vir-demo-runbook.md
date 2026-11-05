@@ -1,7 +1,7 @@
 # Iris widget demo: follow the guided tour
 
-The demo stays beside the normal Tactic state. Its eight-step Lean-authored tour
-covers HeapLang store/load, SpinLock, how VIR is used, and feedback. The final
+The demo stays beside the normal Tactic state. Its nine-step Lean-authored tour
+covers HeapLang store/load, SpinLock, spatial distribution at a split, VIR, and feedback. The final
 step contains the questions for the Iris authors.
 
 ## Presenter setup
@@ -20,7 +20,7 @@ code Iris
 
 Open `IrisTest/ProofMode/WidgetDemo.lean`, put the cursor on a proof line, and
 follow the **Iris demo tour** above the Iris card. **Next** and **Prev** move the
-real editor cursor; the talking points and hover suggestions follow it. Allow
+real editor cursor; the headline and look-at line follow it. Allow
 about ten minutes. A manual jump onto a step's code line selects that step;
 between steps the nearest preceding step is dimmed. Before the first step,
 Next starts the tour. When a step is dimmed, Prev returns to that step itself;
@@ -28,12 +28,13 @@ once on it, Prev goes to the preceding step. Navigation targets the first
 non-space character on the line following each marker, preserving the intended
 before-tactic state.
 
-The main effect is at the first store: `Hl` changes, with its old proposition
-still visible, while `Hframe` is preserved. The resource comparison appears
-first inside the collapsible goal body. Keep the normal Tactic state available
-for the full Lean context. This is a prototype for feedback; “removed” does not
-mean “consumed”. Native enclosing-subterm selection and keyboard policy remain
-known gaps.
+The card is the tactic's **before-state**. At `wp_store`, the subordinate `↳`
+under `Hl` shows its new proposition, and the one under `⊢` shows the new target.
+`Hframe` has no annotation. At `imodintro`, only the goal is annotated; at
+`iframe`, departing hypotheses say “no longer in context”. At `isplitr [HQ HS]`,
+follow `HQ` and `HS` to goal 2 and compare both resulting targets. The normal
+Tactic state remains available for the full Lean context and its own term diff.
+Native enclosing-subterm selection and keyboard policy remain known gaps.
 
 Do a short preflight in the presenter's window. The validated Lean extension is
 `leanprover.lean4 0.0.240` with infoview `~0.13.0`, matching VIR's pin.
