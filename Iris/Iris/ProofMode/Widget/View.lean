@@ -46,16 +46,33 @@ structure InteractiveTermProps where
 def interactiveTerm : RuntimeM (Client.Component InteractiveTermProps) := do
   let native ← Lean.Vir.Infoview.interactiveCode
   Client.Component.ofLean (fun props => do
+    let expanded ← Client.useState false
     let enabled := props.context.enabled && (← props.context.active.get)
-    let value ← if enabled then do
-      let code ← Js.Object.get props.context.codes (← JsValue.ofString (toString props.term.codeIndex))
-      let nativeProps ← Js.Object.empty
-      Js.Object.set nativeProps (← JsValue.ofString "fmt") code
-      Node.functionComponent native nativeProps (← Js.Array.empty)
-    else Html.text props.term.text
-    return ← jsx%{<span style={(← Style.interactiveTerm)}><span data-term-id={(← JsValue.ofString props.term.id)}
-      data-term-active={(← JsValue.ofBool enabled)} aria-label={(← JsValue.ofString props.ariaLabel)}
-      style={(← Style.termCode props.target)}>{value}</span></span>})
+    let codeNode (id text : String) (index : Nat) : RuntimeM (Js Node) := do
+      let value ← if enabled then do
+        let code ← Js.Object.get props.context.codes (← JsValue.ofString (toString index))
+        let nativeProps ← Js.Object.empty
+        Js.Object.set nativeProps (← JsValue.ofString "fmt") code
+        -- Only presentation survives; native semantics belong to this snapshot.
+        Js.Object.set nativeProps (← JsValue.ofString "key") (← JsValue.ofString s!"{props.context.epoch}:{id}")
+        Node.functionComponent native nativeProps (← Js.Array.empty)
+      else Html.text text
+      return ← jsx%{<span data-term-id={(← JsValue.ofString id)}
+        data-term-active={(← JsValue.ofBool enabled)} aria-label={(← JsValue.ofString props.ariaLabel)}
+        style={(← Style.termCode props.target)}>{value}</span>}
+    let value ← if let some inv := props.term.invariant? then do
+      let name ← codeNode (props.term.id ++ "-name") inv.name.text inv.name.codeIndex
+      let toggle ← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => expanded.set (!expanded.value)
+      let body : Js.Array Node ← if expanded.value then
+        Js.Array.ofArray #[← jsx%{<div key="body" style={(← Style.invariantBody)}>
+          {← codeNode (props.term.id ++ "-body") inv.body.text inv.body.codeIndex}</div>}]
+      else Js.Array.empty
+      jsx%{<div data-invariant-open={(← JsValue.ofBool expanded.value)}>
+        <div style={(← Style.invariantHeading)}><span>inv</span>{name}
+          <button type="button" aria-label="Invariant body" aria-expanded={(← JsValue.ofBool expanded.value)}
+            onClick={toggle} style={(← Style.invariantDisclosure)}>{Html.text (if expanded.value then "⟨−⟩" else "⟨…⟩")}</button></div>{body}</div>}
+    else codeNode props.term.id props.term.text props.term.codeIndex
+    return ← jsx%{<span style={(← Style.interactiveTerm)}>{value}</span>})
 
 structure AnnotationProps where
   context : Client.Context
@@ -71,7 +88,7 @@ def annotationRow : RuntimeM (Client.Component AnnotationProps) := do
         context := props.context, term := after
         ariaLabel := if annotation.kind == .target then "Target after tactic"
           else props.resourceName ++ " after tactic"
-      } (some (← JsValue.ofString (toString props.context.epoch)))]
+      } (some (← js#"term"))]
     else Js.Array.empty
     return ← jsx%{<div data-annotation-kind={(← JsValue.ofString annotation.kind.label)}
       data-resource-name={(← JsValue.ofString props.resourceName)}
@@ -96,7 +113,7 @@ def hypothesisRow : RuntimeM (Client.Component HypothesisProps) := do
       context := props.context
       term := hypothesis.proposition
       ariaLabel := kindLabel hypothesis.kind ++ " hypothesis " ++ hypothesis.name
-    } (some (← JsValue.ofString (toString props.context.epoch)))
+    } (some (← js#"term"))
     let annotations ← props.annotations.zipIdx.mapM fun (entry, index) => do
       Client.Component.render annotation {
         context := props.context, annotation := entry, resourceName := hypothesis.name
@@ -117,11 +134,15 @@ def contextSection : RuntimeM (Client.Component ContextProps) := do
   let annotation ← annotationRow
   Client.Component.ofLean (fun props => do
     let label := kindLabel props.kind
-    let mut values ← props.hypotheses.mapM fun hypothesis => do
+    let slots ← Client.useState ({} : PresentationKeys)
+    let ids := props.hypotheses.map (·.id)
+    let keys := slots.value.update ids
+    if slots.value.ids != ids then slots.set keys
+    let mut values ← props.hypotheses.zipIdx.mapM fun (hypothesis, index) => do
       Client.Component.render row {
         hypothesis, context := props.context
         annotations := props.comparison?.map (·.hypothesisAnnotations hypothesis) |>.getD #[]
-      } (some (← JsValue.ofString hypothesis.id))
+      } (some (← JsValue.ofString (toString keys.keys[index]!)))
     for (hypothesis, entry) in props.comparison?.map (·.additions props.kind) |>.getD #[] do
       let value ← Client.Component.render annotation {
         context := props.context, annotation := entry, resourceName := hypothesis.name }
@@ -144,7 +165,7 @@ def targetSection : RuntimeM (Client.Component TargetProps) := do
     let value ← Client.Component.render term {
       context := props.context
       term := props.term, ariaLabel := "Target", target := true
-    } (some (← JsValue.ofString (toString props.context.epoch)))
+    } (some (← js#"term"))
     let annotations ← props.annotations.zipIdx.mapM fun (entry, index) => do
       Client.Component.render annotation { context := props.context, annotation := entry }
         (some (← JsValue.ofString s!"target-{index}"))
@@ -160,6 +181,7 @@ structure GoalProps where
 def goalCard : RuntimeM (Client.Component GoalProps) := do
   let contextView ← contextSection
   let targetView ← targetSection
+  let termView ← interactiveTerm
   Client.Component.ofLean (fun props => do
     let goal := props.goal
     let expandedState ← Client.useState props.initiallyExpanded
@@ -173,8 +195,14 @@ def goalCard : RuntimeM (Client.Component GoalProps) := do
     let toggle ← Js.Function.ofLeanVoid fun (_ : Js SyntheticEvent) => expandedState.set (!expanded)
     let summary := s!"□ {goal.persistent.size} · ∗ {goal.spatial.size}"
     let summaryLabel := countLabel goal.persistent.size "persistent" ++ ", " ++ countLabel goal.spatial.size "spatial"
+    let mask : Js.Array Node ← if let some part := goal.mask? then do
+      let value ← Client.Component.render termView {
+        context := props.context, ariaLabel := "Current mask"
+        term := { id := "mask", text := part.text, codeIndex := part.codeIndex, typeText := "CoPset", summary := "current mask" } }
+      Js.Array.ofArray #[← jsx%{<span key="mask" data-mask-chip="true" style={(← Style.maskChip)}><span>mask</span>{value}</span>}]
+    else Js.Array.empty
     let header ← jsx%{<header style={(← Style.goalHeader)}><h3 id={headingId}
-      style={(← Style.goalHeading)}>{Html.text goal.title}</h3><p aria-label={(← JsValue.ofString summaryLabel)}
+      style={(← Style.goalHeading)}>{Html.text goal.title}</h3>{mask}<p aria-label={(← JsValue.ofString summaryLabel)}
       style={(← Style.goalSummary)}>{Html.text summary}</p><button id={toggleId}
       type="button" title={(← JsValue.ofString (if expanded then "Collapse goal" else "Expand goal"))}
       aria-label={(← JsValue.ofString (if expanded then "Collapse " ++ goal.title else "Expand " ++ goal.title))}

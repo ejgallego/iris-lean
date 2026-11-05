@@ -43,14 +43,44 @@ absent. Model assertions cover changed, target-only, unchanged, closed and
 unavailable comparisons. The browser checks the label even at an after-side
 cursor position; the real VS Code gate adds a comment-to-after-side transition
 and passes **21/21**, including the existing continuity checks. Validation:
-`lake build IrisTest +Iris.ProofMode.Widget:vir +IrisTest.ProofMode.WidgetRich:vir
+`lake build IrisTest +Iris.ProofMode.Widget:vir
 +IrisTest.ProofMode.WidgetTour:vir`, `lake test`,
 `node scripts/widget-browser-smoke.mjs`, and
 `node scripts/vscode-e2e/widget-vscode.test.mjs`. Real-host evidence:
 `.tmp/vscode-e2e-runs/2026-11-05T15-36-31-328Z/`.
-The separate [rich-rendering spike report](widget-rich-rendering-spike.md)
-records the paired captures, line counts and RPC/package costs; it remains opt-in.
+The Round E spike and its evidence remain on `feat/proof-mode-widget`; this
+production branch starts from Round D plus the label fix.
 
+
+## Mask chip and invariant disclosure (Round F)
+
+The ordinary widget shows the outer WP/fupd mask in its header and folds a
+recognized `inv N P` to `inv N ⟨…⟩`. Each fragment is independently printed in
+its saved local context and rendered through native InteractiveCode. Unsupported
+expressions or failed detail printing retain the canonical term. WP/fupd targets
+and annotations keep the ordinary printer layout. No opt-in flag or WidgetRich
+entry is included.
+
+Disclosure belongs to a resource's presentation key: surviving IVarIds take
+priority over unclaimed ordinal slots, within each context of the retained card.
+Only presentation follows that fallback; native children receive fresh snapshot
+keys. `WidgetDetails` tests typed recognition, failure rollback (including a
+partially printed invariant), canonical fallback and key assignment under reorder,
+ID churn and deletion. The VS Code gate adds the reduced SpinLock mask, initially
+folded Hinv, native namespace hover and expansion/DOM continuity across cursor
+refresh, while checking that native children are replaced.
+
+IR package members total **954,010 B**, versus **877,812 B** at Round D (+76,198 B,
+8.7%) and **983,559 B** for the labelled Round E spike (−29,549 B). These are sums
+of the 40 descriptor-listed IR files, excluding the unchanged Wasm runtime.
+The discarded row renderers, generic layout types, RPC flag and test entry are
+absent from this branch's sources. Hashes are in `.tmp/round-f/package-size.json`.
+
+Validation: the combined IrisTest/widget/tour build (1,156 jobs), `lake test`,
+ordinary browser regression and **23/23 real VS Code checks** pass. Evidence:
+`.tmp/round-f/{build,lake-test,browser-final,vscode-final}.log` and
+`.tmp/vscode-e2e-runs/2026-11-05T15-53-41-025Z/`.
+The SpinLock screenshot is `.tmp/round-f/spin-open.png`.
 
 ## Guided demo tour (Round C)
 

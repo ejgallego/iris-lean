@@ -8,6 +8,7 @@ public import Iris.ProofMode.Widget.Model
 public meta import Iris.ProofMode.GoalChanges
 public meta import Iris.ProofMode.Display
 public meta import Iris.ProofMode.Widget.Model
+public meta import Iris.ProofMode.Widget.Details
 public meta import Vir.Infoview
 
 /-!
@@ -46,12 +47,15 @@ private def renderedIProp (id summary : String) (expr : Expr) : ProjectionM Rend
   let code ← ppExprTagged expr delabIProp
   let type ← instantiateMVars (← inferType expr)
   let typeText ← ppExpr type
+  let codeIndex ← modifyGet fun codes => (codes.size, codes.push code)
+  let (invariant?, codes) ← Details.invariant? expr (← get)
+  set codes
   return {
     id
     text := toString code.stripTags
     typeText := toString typeText
     summary
-    codeIndex := ← modifyGet fun codes => (codes.size, codes.push code)
+    codeIndex, invariant?
   }
 
 private partial def displayHypotheses
@@ -98,7 +102,10 @@ def toDisplayGoal
   let title := match userName? with
     | some userName => "case " ++ userName
     | none => s!"goal {index + 1}"
+  let (mask?, codes) ← Details.mask? irisGoal.goal (← get)
+  set codes
   return {
+    mask?
     id := toString mvarId.name
     index
     title

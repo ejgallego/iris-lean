@@ -204,4 +204,16 @@ public def changeSummary : Entry := style #[
   ("overflow", "hidden"), ("textOverflow", "ellipsis"), ("marginBottom", "2px")
 ]
 
+public def invariantHeading : Entry := style #[
+  ("display", "flex"), ("flexWrap", "wrap"), ("gap", "4px"),
+  ("alignItems", "baseline"), ("minWidth", "0"), ("fontFamily", editorFont)]
+public def invariantBody : Entry := style #[
+  ("paddingLeft", "10px"), ("borderLeft", border borderColor), ("minWidth", "0")]
+public def invariantDisclosure : Entry := style #[
+  ("padding", "0 3px"), ("border", border borderColor), ("borderRadius", "3px"),
+  ("color", muted), ("background", codeBackground), ("font", "inherit"), ("cursor", "pointer")]
+public def maskChip : Entry := style #[
+  ("display", "flex"), ("flexWrap", "wrap"), ("alignItems", "baseline"), ("gap", "4px"),
+  ("padding", "0 4px"), ("border", border borderColor), ("borderRadius", "3px"), ("minWidth", "0")]
+
 end Iris.ProofMode.Widget.Style

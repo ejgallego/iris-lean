@@ -260,6 +260,49 @@ try {
     return w;
   });
 
+  await check('mask chip and folded invariant use native namespace hover', async () => {
+    await at('widget-position-spin-open');
+    await waitWidget('spin-open details', w => w.tactics?.includes('wp_store') && w.text.includes('Hinv'));
+    const details = await infoviewEval(vs, `(() => {
+      const w = document.querySelector('[data-iris-proof-mode-widget]');
+      const inv = w.querySelector('[data-hypothesis-name="Hinv"] [data-invariant-open]');
+      w.querySelector('article').scrollIntoView({ block: 'center' });
+      return { mask: w.querySelector('[data-mask-chip]')?.textContent, open: inv?.dataset.invariantOpen,
+        body: !!inv?.querySelector('[data-term-id$="-body"]') };
+    })()`);
+    // Lean prints set difference as a backslash; accept either mathematical glyph.
+    assert(/⊤\s*[\\∖]\s*↑spinlockN/.test(details.mask), 'outer reduced mask not shown: ' + details.mask);
+    assert(details.open === 'false' && !details.body, 'Hinv must start folded');
+    const shot = await vs.workbench.send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(`${vs.run}/round-f-spin-open.png`, Buffer.from(shot.data, 'base64'));
+    await infoviewEval(vs, `(() => {
+      const inv = document.querySelector('[data-hypothesis-name="Hinv"] [data-invariant-open]');
+      const leaf = [...inv.querySelectorAll('[data-has-tooltip-on-hover]')].find(e => e.textContent === 'spinlockN' && !e.querySelector('[data-has-tooltip-on-hover]'));
+      if (!leaf) throw new Error('native namespace leaf missing');
+      for (const type of ['pointerover', 'pointermove', 'mouseover', 'mousemove'])
+        leaf.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true }));
+    })()`);
+    await vs.until('namespace hover', () => infoviewEval(vs,
+      `Array.from(document.querySelectorAll('.tooltip')).some(e => e.textContent.includes('Namespace'))`), 20000, 500);
+    return details;
+  });
+
+  await check('invariant expansion survives cursor refresh with fresh native terms', async () => {
+    await infoviewEval(vs, `(() => {
+      const inv = document.querySelector('[data-hypothesis-name="Hinv"] [data-invariant-open]');
+      globalThis.__irisFold = inv;
+      globalThis.__irisFoldNative = inv.querySelector('[data-has-tooltip-on-hover]');
+      inv.querySelector('button').click();
+    })()`);
+    await vs.until('expanded body', () => infoviewEval(vs,
+      `globalThis.__irisFold.dataset.invariantOpen === 'true' && globalThis.__irisFold.textContent.includes('∃ b')`), 20000, 500);
+    await at('widget-position-spin-open', 1);
+    await vs.until('retained disclosure, retired native child', () => infoviewEval(vs,
+      `globalThis.__irisFold.isConnected && globalThis.__irisFold.dataset.invariantOpen === 'true' &&
+       !globalThis.__irisFoldNative.isConnected && !!globalThis.__irisFold.querySelector('[data-term-id$="-body"] [data-has-tooltip-on-hover]')`), 20000, 500);
+    return { expanded: true, identityPreserved: true, nativeChildReplaced: true };
+  });
+
   await check('spinlock iframe marks only Hpt leaving the context', async () => {
     await at('widget-position-spin-frame');
     const w = await waitWidget('spin frame', w => w.tactics?.includes('iframe Hpt'));

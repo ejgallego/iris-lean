@@ -17,6 +17,37 @@ public inductive ContextKind where
   | spatial
   deriving Repr, BEq, DecidableEq, ToJson, FromJson
 
+/-- Independently printed native code in the reply's original code array. -/
+public structure NativePart where
+  text : String
+  codeIndex : Nat
+  deriving Repr, BEq, ToJson, FromJson
+
+public structure InvariantParts where
+  name : NativePart
+  body : NativePart
+  deriving Repr, BEq, ToJson, FromJson
+
+/-- Presentation only: preserve surviving IDs first, then unclaimed ordinal slots.
+Never use these keys to identify semantic references or pair proof resources. -/
+public structure PresentationKeys where
+  ids : Array String := #[]
+  keys : Array Nat := #[]
+  next : Nat := 0
+
+public def PresentationKeys.update (old : PresentationKeys) (ids : Array String) : PresentationKeys := Id.run do
+  let matched := ids.map fun id => (old.ids.findIdx? (· == id)).bind (old.keys[·]?)
+  let claimed := matched.filterMap id
+  let mut next := old.next
+  let mut keys := #[]
+  for (_, i) in ids.zipIdx do
+    if let some key := matched[i]! then keys := keys.push key
+    else if let some key := old.keys[i]? then
+      if !claimed.contains key then keys := keys.push key
+      else keys := keys.push next; next := next + 1
+    else keys := keys.push next; next := next + 1
+  return { ids, keys, next }
+
 /-- Display metadata for one proposition. `codeIndex` selects its original native
 `CodeWithInfos` object in this reply; tagged code never round-trips through Lean JSON. -/
 public structure RenderedTerm where
@@ -25,6 +56,7 @@ public structure RenderedTerm where
   typeText : String
   summary : String
   codeIndex : Nat := 0
+  invariant? : Option InvariantParts := none
   deriving Repr, BEq, ToJson, FromJson
 
 /-- A single Iris hypothesis extracted from the typed proof-mode state. -/
@@ -73,6 +105,7 @@ public structure DisplayGoal where
   persistent : Array DisplayHypothesis
   spatial : Array DisplayHypothesis
   target : RenderedTerm
+  mask? : Option NativePart := none
   comparison? : Option DisplayComparison := none
   deriving Repr, BEq, ToJson, FromJson
 
@@ -176,7 +209,7 @@ public def DisplayGoal.changeSummary (goal : DisplayGoal) (comparison : DisplayC
   return projection ++ "changes " ++ joinNames (names ++ if targetChanged then ["the goal"] else [])
 
 /-- Shared by the server payload default and the browser compatibility check. -/
-public def widgetStateVersion : Nat := 6
+public def widgetStateVersion : Nat := 7
 
 /-- Versioned payload transported from the Lean server to the VIR component. -/
 public structure WidgetState where
