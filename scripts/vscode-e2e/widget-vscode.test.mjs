@@ -191,6 +191,59 @@ try {
     return w;
   });
 
+  await check('native expression diffs mark changes and leave surviving wrapper bodies quiet', async () => {
+    const states = [];
+    for (const [marker, tactic] of [['heap-store', 'wp_store'], ['spin-open', 'wp_store'], ['spin-stored', 'imodintro']]) {
+      await at('widget-position-' + marker);
+      await waitWidget('diff ' + marker, w => w.tactics?.includes(tactic) &&
+        (marker === 'heap-store' ? w.text.includes('Hframe') : w.text.includes('Hinv')));
+      const state = await infoviewEval(vs, `(() => {
+        const card = document.querySelector('[data-iris-proof-mode-widget] article');
+        card.scrollIntoView({ block: 'center' });
+        const marks = el => ({ removed: [...el.querySelectorAll('.removed-text')].map(e => e.textContent),
+          inserted: [...el.querySelectorAll('.inserted-text')].map(e => e.textContent) });
+        // Count occupied text-line bands at the actual VS Code width, ignoring
+        // nested span duplication and small baseline differences in the header.
+        const lines = el => {
+          const ys = [], walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          while (walk.nextNode()) if (walk.currentNode.textContent.trim()) {
+            const r = document.createRange(); r.selectNodeContents(walk.currentNode);
+            for (const box of r.getClientRects()) if (box.width && box.height) ys.push(box.top);
+          }
+          const bands = []; for (const y of ys.sort((a,b) => a-b))
+            if (!bands.length || y - bands.at(-1) > 3) bands.push(y);
+          return bands.length;
+        };
+        const target = card.querySelector('section[aria-label="Target"]');
+        return { rows: [...card.querySelectorAll('[data-hypothesis-name]')].map(row => ({
+          name: row.dataset.hypothesisName, before: marks(row.children[1]),
+          after: [...row.querySelectorAll('[data-annotation-kind]')].map(marks) })),
+          targetBefore: marks(target.firstElementChild),
+          targetAfter: [...target.querySelectorAll('[data-annotation-kind="target"]')].map(marks),
+          cardLines: lines(card), annotationLines: [...target.querySelectorAll('[data-annotation-kind="target"]')].map(lines),
+          width: card.getBoundingClientRect().width, height: card.getBoundingClientRect().height,
+          font: getComputedStyle(target).fontSize };
+      })()`);
+      const row = name => state.rows.find(r => r.name === name);
+      if (marker === 'heap-store') {
+        assert(row('Hl').before.removed.join('') === 'v' && row('Hl').after[0].inserted.join('') === "v'", 'cell diff must mark only the old/new value');
+        assert(!row('Hframe').before.removed.length && !row('Hframe').before.inserted.length, 'unchanged frame highlighted');
+        assert(state.targetBefore.removed.length && state.targetAfter[0].inserted.length, 'WP program diff missing');
+      } else if (marker === 'spin-open') {
+        assert(row('Hpt').before.removed.length && row('Hpt').after[0].inserted.length, 'SpinLock cell diff missing');
+        assert(row('Hcond').before.removed.join('').trim() === '▷' && !row('Hcond').after[0].inserted.length, 'later strip must highlight only the wrapper');
+        assert(['Hinv','Hl','HR','Hcont'].every(n => !row(n).before.removed.length && !row(n).before.inserted.length), 'unchanged SpinLock resource highlighted');
+        assert(state.targetBefore.removed.length && state.targetAfter[0].inserted.length, 'SpinLock target diff missing');
+      } else {
+        assert(state.targetBefore.removed.join('').includes('|={') && !state.targetAfter[0].inserted.length, 'imodintro should remove only the update wrapper');
+      }
+      const shot = await vs.workbench.send('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(`${vs.run}/round-h-${marker}.png`, Buffer.from(shot.data, 'base64'));
+      states.push({ marker, ...state });
+    }
+    return states;
+  });
+
   await check('mask chip and folded invariant use native namespace hover', async () => {
     await at('widget-position-spin-open');
     await waitWidget('spin-open details', w => w.tactics?.includes('wp_store') && w.text.includes('Hinv'));

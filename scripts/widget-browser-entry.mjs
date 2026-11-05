@@ -293,6 +293,10 @@ async function run() {
           name === "heapStore" ? "wp_store" : "wp_load");
       }
       if (name === "heapStore") {
+        check(panel().querySelector('[data-hypothesis-name="Hl"] .removed-text')?.textContent === 'v' &&
+          panel().querySelector('[data-resource-name="Hl"] .inserted-text')?.textContent === "v'", "native value diff");
+        check(panel().querySelector('section[aria-label="Target"] .removed-text') &&
+          panel().querySelector('section[aria-label="Target"] .inserted-text'), "native WP diff");
         await hover("v'", "Val", panel().querySelector('[data-resource-name="Hl"]'));
         // Native navigation is tested at EditorApi.showDocument; the real VS Code gate opens the file.
         const some = native().find(node => node.textContent.startsWith("some ")); check(some, "native constant tag");
@@ -313,6 +317,11 @@ async function run() {
       check(resources.get("Hcond").startsWith(stored ? "if b" : "▷ if b"), "invariant condition loses later");
       check(goal.target.text.startsWith(stored ? "|={" : "WP ") && goal.target.text.includes("spinlockN"), "invariant-closing target");
       check(target().textContent === goal.target.text, "canonical SpinLock target");
+      const condition = panel().querySelector('[data-hypothesis-name="Hcond"]');
+      if (!stored) check([...condition.children[1].querySelectorAll('.removed-text')].map(e => e.textContent).join('').trim() === '▷' &&
+        !condition.querySelector('[data-annotation-kind] .inserted-text'), `dropped later wrapper only: ${JSON.stringify({ removed: [...condition.children[1].querySelectorAll(".removed-text")].map(e => e.textContent), inserted: [...condition.querySelectorAll("[data-annotation-kind] .inserted-text")].map(e => e.textContent) })}`);
+      else check(panel().querySelector('section[aria-label="Target"] .removed-text') &&
+        !panel().querySelector('[data-annotation-kind="target"] .inserted-text'), "dropped update wrapper only");
       for (const hyp of [...goal.persistent, ...goal.spatial].filter(h => !h.proposition.invariant)) check([...panel().querySelectorAll('[data-term-id]')]
         .some(n => n.dataset.termId === hyp.proposition.id && n.textContent === hyp.proposition.text), "canonical SpinLock resource");
       assertChanges(goal, { Hl: "preserved", HR: "preserved", Hcont: "preserved", Hinv: "preserved",

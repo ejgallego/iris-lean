@@ -9,6 +9,7 @@ public meta import Iris.ProofMode.GoalChanges
 public meta import Iris.ProofMode.Display
 public meta import Iris.ProofMode.Widget.Model
 public meta import Iris.ProofMode.Widget.Details
+public meta import Iris.ProofMode.Widget.Diff
 public meta import Vir.Infoview
 
 /-!
@@ -137,7 +138,7 @@ private def displayIrisGoalAt?
       return (some display, codes)
 
 private def displayComparison (tactic : String) (comparison : GoalChanges.Comparison)
-    (codes : Array CodeWithInfos) : IO (DisplayComparison × Array CodeWithInfos) := do
+    (beforeDisplay : DisplayGoal) (codes : Array CodeWithInfos) : IO (DisplayComparison × Array CodeWithInfos) := do
   let before := comparison.before
   let mut codes := codes
   let mut branches := #[]
@@ -151,6 +152,21 @@ private def displayComparison (tactic : String) (comparison : GoalChanges.Compar
         hypotheses := goal.persistent ++ goal.spatial
         target? := some { goal.target with id := s!"iris-target-after-{before.id.name}-{branch.id.name}" }
         codes := nextCodes
+        -- Pair by the already-validated IVarIds. Each side was independently
+        -- printed at root in its saved context, including each target annotation.
+        codes ← after.context.runMetaM {} <| after.id.withContext do
+          let mut result := codes
+          for change in branch.resources do
+            if change.status != .changed then continue
+            let some old := change.before? | continue
+            let some new := change.after? | continue
+            let some b := (beforeDisplay.persistent ++ beforeDisplay.spatial).find? (·.id == toString old.id.name)
+              | continue
+            let some a := hypotheses.find? (·.id == toString new.id.name) | continue
+            result ← Diff.rendered old.proposition new.proposition b.proposition a.proposition result
+          if branch.targetChanged then
+            result ← Diff.rendered before.target after.target beforeDisplay.target goal.target result
+          return result
     let resources ← branch.resources.mapM fun change => do
       let some resource := change.after?.orElse (fun _ => change.before?)
         | throw <| IO.userError "resource change has neither side"
@@ -201,7 +217,7 @@ def state (params : StateRequest) : RequestM (RequestTask SnapshotReply) := do
           codes := nextCodes
           let label := (ti.stx.getRange?.map fun range =>
             String.Pos.Raw.extract doc.meta.text.source range.start range.stop).getD (toString ti.stx.getKind)
-          let (display, nextCodes) ← displayComparison label comparison codes
+          let (display, nextCodes) ← displayComparison label comparison goal codes
           codes := nextCodes
           displayGoals := displayGoals.push { goal with comparison? := some display }
       else

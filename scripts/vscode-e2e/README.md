@@ -54,7 +54,7 @@ including the old/new proposition text, preserved resources and native new-side
 terms. Cursor waits identify the selected tactic so the new after-view cannot
 make a stale snapshot accidentally satisfy the next position's predicate.
 
-Round G keeps the tour separate and disabled by default. The first 20 checks
+Round G keeps the tour separate and disabled by default. The ordinary widget checks
 run on the default document, including an assertion that the tour is absent.
 The harness then types the optional import and panel declaration into the unsaved
 buffer. Restored Next/Prev/manual-navigation/shifted-marker checks and a headline
@@ -64,3 +64,8 @@ flag, saved source change, or default tour dependency is needed.
 The quotation POC check verifies that shortened `#b` retains the native
 `b : Bool` hover, Ctrl-click on shortened `false` reaches its real definition,
 and the demo option also affects the ordinary Tactic state.
+
+Round H adds a native expression-diff check inside the Iris card at Heap store,
+SpinLock store, and `imodintro`. It verifies quiet unchanged resources and
+surviving wrapper bodies, records occupied text-line bands, and captures the
+three states. Existing navigation and continuity checks remain unchanged.

@@ -1,5 +1,29 @@
 # Widget testing and use-case surface
 
+## Native expression diff POC (Round H)
+
+The separately vendored Lean 4.35 definitions are unchanged apart from module,
+visibility and namespace scaffolding. `WidgetDiff` checks exact marked text and
+before/after tag direction for a WP program step, `#b`/`#false`, `v`/`v′`,
+unchanged terms, later/fupd stripping, and the actual saved SpinLock condition.
+It also checks ambiguous arguments, hidden-tag fallback, text preservation and
+retention of an earlier branch's markings during local wrapper reprinting.
+The browser and VS Code gates check native diff classes inside the card, quiet
+frames and wrapper bodies, while retaining hover/navigation and continuity.
+
+The [implementation note](widget-expression-diff-poc.md) explains the local
+wrapper-root repair and the deferred elision stretch item. Review pairs for
+Heap store, SpinLock store and `imodintro` are in `.tmp/round-h/`.
+Validation: combined `IrisTest`/widget/tour build (1,162 jobs), `lake test`,
+browser regression and **26/26 real VS Code checks** pass. Final logs are
+`.tmp/round-h/*-reviewed.log`; real-host run:
+`.tmp/vscode-e2e-runs/2026-11-05T19-29-50-762Z/`.
+At a 470px card width, SpinLock has 16 occupied text-line bands versus 17 in the
+retained Round F screenshot (baseline counted manually). Its target annotation
+remains three lines: the one-line reduction comes from Round G's quotation
+option, not from diffing or elision.
+
+
 ## In-place expert annotations (Round D)
 
 The card shows the selected tactic's before-state in its own context order.
