@@ -36,6 +36,30 @@ follow `HQ` and `HS` to goal 2 and compare both resulting targets. The normal
 Tactic state remains available for the full Lean context and its own term diff.
 Native enclosing-subterm selection and keyboard policy remain known gaps.
 
+Keep the live story about the proof obligations:
+
+- **HeapLang store/load:** a complete proof adapted from the repository's heap
+  tactic tests. Follow the updated cell while the second cell's ownership stays
+  unchanged, then show the read and postcondition. This establishes what an
+  annotation means before the longer example.
+- **SpinLock release:** the complete library `SpinLock.release_spec` proof with
+  pause points. At `spin-open`, point out the reduced mask in the header and
+  expand `Hinv` to inspect the invariant body. Follow `Hpt` and `Hcond` through
+  the store, the goal-only update at `imodintro`, and the frame step. Ask whether
+  the view makes restoring the invariant easier to follow.
+- **Split:** use the small logical example to isolate the ownership question:
+  which spatial resources go to each resulting goal? It is a focused example,
+  while SpinLock supplies the realistic library proof.
+
+For an optional one-minute notation discussion, open
+[`notation-gallery/index.html`](notation-gallery/index.html) in a browser.
+Its offline HTML/MathML specimens include fancy updates, an invariant and a long
+list-reversal hypothesis. These are manually authored design specimens with
+mock inspections, **not live Lean terms or a KaTeX integration**. Use them to ask
+which notation would help an Iris expert read a difficult state. The live widget
+currently adds the mask chip and invariant disclosure to native Lean terms;
+the experimental WP/fupd row layouts were not adopted.
+
 Do a short preflight in the presenter's window. The validated Lean extension is
 `leanprover.lean4 0.0.240` with infoview `~0.13.0`, matching VIR's pin.
 
