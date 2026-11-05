@@ -35,7 +35,7 @@ def split : DisplayComparison := {
 #guard (split.hypothesisAnnotations hq).map (·.lead) == #["isplitr: goal 2"]
 #guard (split.hypothesisAnnotations hs).map (·.kind) == #[.distributed]
 #guard split.targetAnnotations.map (·.lead) == #["isplitr: goal 1 ⊢ ", "isplitr: goal 2 ⊢ "]
-#guard goal.changeSummary split == "isplitr [HQ HS] changes HQ, HS and the goal"
+#guard goal.changeSummary split == "before isplitr [HQ HS] · changes HQ, HS and the goal"
 
 def changed : DisplayComparison := {
   tactic := "wp_store", beforeId := "before"
@@ -45,17 +45,17 @@ def changed : DisplayComparison := {
       resource "HQ" .changed (some { hq with proposition := term "new Q" }), resource "HS" .preserved (some hs)] }] }
 #guard (changed.hypothesisAnnotations hp).isEmpty && (changed.hypothesisAnnotations hs).isEmpty
 #guard (changed.hypothesisAnnotations hq).map (·.term?.map (·.text)) == #[some "new Q"]
-#guard goal.changeSummary changed == "wp_store changes HQ and the goal"
+#guard goal.changeSummary changed == "before wp_store · changes HQ and the goal"
 #guard changed.targetAnnotations.map (·.term?.map (·.text)) == #[some "new target"]
 
 def modal : DisplayComparison := { changed with tactic := "imodintro", branches := #[
   { changed.branches[0] with resources := #[resource "HQ" .preserved (some hq)] }] }
 #guard (modal.hypothesisAnnotations hq).isEmpty
-#guard goal.changeSummary modal == "imodintro only changes the goal"
+#guard goal.changeSummary modal == "before imodintro · only the goal changes"
 def unchanged : DisplayComparison := { modal with tactic := "skip", branches := #[
   { modal.branches[0] with targetChanged := false }] }
 #guard unchanged.targetAnnotations.isEmpty
-#guard goal.changeSummary unchanged == "skip changes nothing in Iris"
+#guard goal.changeSummary unchanged == "before skip · changes nothing in Iris"
 
 def moved : DisplayComparison := { changed with branches := #[
   { id := "after", resources := #[resource "HQ" .changed (some { hq with kind := .persistent })] }] }
@@ -72,12 +72,12 @@ def added : DisplayComparison := { changed with tactic := "iintro", branches := 
 
 -- A closed or refused comparison must never claim resources disappeared.
 def closed : DisplayComparison := { tactic := "iexact HQ", beforeId := "before", closed := true }
-#guard goal.changeSummary closed == "iexact HQ closes this goal"
+#guard goal.changeSummary closed == "before iexact HQ · closes this goal"
 #guard (closed.hypothesisAnnotations hq).isEmpty && closed.targetAnnotations.isEmpty
 def unavailable := { split with branches := #[{ id := "unknown", unavailable? := some "not Iris" }] }
 #guard (unavailable.hypothesisAnnotations hq).isEmpty && unavailable.targetAnnotations.isEmpty
 #guard (unavailable.additions .spatial).isEmpty
-#guard goal.changeSummary unavailable == "isplitr [HQ HS]: comparison unavailable — goal 1: not Iris"
+#guard goal.changeSummary unavailable == "before isplitr [HQ HS] · comparison unavailable — goal 1: not Iris"
 #guard match (Lean.fromJson? (Lean.toJson { goal with comparison? := some split }) : Except String DisplayGoal) with
   | .ok decoded => decoded.comparison? == some split
   | .error _ => false

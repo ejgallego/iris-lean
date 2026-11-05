@@ -252,6 +252,8 @@ async function run() {
     const assertChanges = (goal, expected, tactic) => {
       const comparison = goal.comparison;
       check(comparison && comparison.tactic === tactic && !comparison.unavailable && !comparison.closed, `selected tactic comparison for ${tactic}: ${JSON.stringify(comparison)}`);
+      check(panel().querySelector('[data-comparison-summary]')?.textContent.startsWith(`before ${tactic} · `),
+        "comparison labels the before-state projection");
       check(comparison.branches.length === 1 && !comparison.branches[0].unavailable, "one sound successor");
       const changes = comparison.branches[0].resources;
       check(changes.length === Object.keys(expected).length, "all resources accounted for");
@@ -330,6 +332,8 @@ async function run() {
     await move({ ...config.contexts, character: config.contexts.character + 1 });
     check(cards().length === 1 && panel().querySelectorAll('[data-annotation-kind="target"]').length === 2,
       "after-side position still annotates one before-card with both descendants");
+    check(panel().querySelector('[data-comparison-summary]')?.textContent === 'before isplitr [HQ HS] · changes HQ, HS and the goal',
+      "after-side position explicitly labels the before-state");
     await move({ ...config.split, character: config.split.character + 3 });
     check(panel().querySelector('[data-comparison-outcome="closed"]') &&
       !panel().querySelector('[data-annotation-kind="gone"]'), "closed goal is not resource consumption");

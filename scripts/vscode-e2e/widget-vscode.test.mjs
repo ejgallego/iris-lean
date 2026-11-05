@@ -128,7 +128,7 @@ try {
     assert(w.changes.length === 1 && cell?.status === 'changed', 'only Hl has a hypothesis annotation');
     assert(cell.native && cell.text.includes("l ↦ some v'"), 'native new cell proposition');
     assert(w.rows.find(r => r.name === 'Hl')?.text === 'l ↦ some v', 'before proposition stays above its annotation');
-    assert(w.summary === 'wp_store changes Hl and the goal' && w.targets.length === 1, 'store summary and goal annotation');
+    assert(w.summary === 'before wp_store · changes Hl and the goal' && w.targets.length === 1, 'store summary and goal annotation');
     assert(!w.text.includes('was:') && !w.text.includes('preserved'), 'redundant comparison text remains');
     const t = await tourAt(0);
     assert(t.text.includes('wp_store updates Hl; Hframe untouched.') && t.text.includes('↳ under Hl and under ⊢.'), 'store tour disagrees with annotations');
@@ -139,7 +139,7 @@ try {
     await at('widget-position-heap-load');
     const w = await waitWidget('heap load widget', w => w.present && w.tactics.includes("wp_load") && w.text.includes("l ↦ some v'"));
     assert(w.text.includes("l' ↦ some w"), 'Hframe changed');
-    assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'wp_load only changes the goal', 'load must leave hypothesis rows quiet');
+    assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'before wp_load · only the goal changes', 'load must leave hypothesis rows quiet');
     const t = await tourAt(1);
     assert(t.text.includes('wp_load only changes the goal.') && t.text.includes('No hypothesis annotations; ↳ under ⊢.'), 'load tour disagrees');
     return w;
@@ -238,7 +238,7 @@ try {
       assert(w.termButtons === 0, 'custom term buttons remain');
       assert(w.rows.map(r => r.name).join(' ') === (marker.endsWith('open') ? 'Hinv Hl HR Hcont Hpt Hcond' : 'Hinv Hl HR Hcont Hcond Hpt'), 'SpinLock context order changed');
       if (marker.endsWith('stored')) {
-        assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'imodintro only changes the goal',
+        assert(w.changes.length === 0 && w.targets.length === 1 && w.summary === 'before imodintro · only the goal changes',
           'imodintro must annotate only the target');
         const t = await tourAt(4);
         assert(t.text.includes('imodintro only changes the goal.') && t.text.includes('The update modality under ⊢.'), 'imodintro tour disagrees');
@@ -254,7 +254,7 @@ try {
     const cell = w.changes.find(r => r.name === 'Hpt'), condition = w.changes.find(r => r.name === 'Hcond');
     assert(cell.native && cell.text.includes('#false') && !cell.text.includes('▷'), 'new cell loses its later');
     assert(condition.text.includes('if b') && !condition.text.includes('▷'), 'new condition loses its later');
-    assert(w.targets.length === 1 && w.summary === 'wp_store changes Hpt, Hcond and the goal', 'SpinLock goal and summary');
+    assert(w.targets.length === 1 && w.summary === 'before wp_store · changes Hpt, Hcond and the goal', 'SpinLock goal and summary');
     const t = await tourAt(3);
     assert(t.text.includes('Store inside the opened invariant.') && t.text.includes('Hpt updated; ▷ stripped from Hpt and Hcond. The other four untouched.'), 'store tour disagrees');
     return w;
@@ -282,6 +282,17 @@ try {
     assert(t.text.includes('isplitr [HQ HS] distributes spatial ownership.') &&
       t.text.includes('HQ and HS go to goal 2; HP and HQR remain in both goals.'), 'split tour disagrees');
     return w;
+  });
+
+  await check('before-state label at an after-side position; none outside a tactic', async () => {
+    const comment = await vs.driver({ op: 'find', marker: 'widget-position-heap-store', offset: 0 });
+    await vs.driver({ op: 'cursor', line: comment.line, character: 4 });
+    const outside = await waitWidget('unlabelled comment', w => w.present && !w.summary);
+    assert(outside.changes.length === 0 && outside.targets.length === 0, 'comment must not carry tactic annotations');
+    await at('widget-position-heap-store', 1);
+    const inside = await waitWidget('labelled before projection', w => w.summary === 'before wp_store · changes Hl and the goal');
+    assert(inside.rows.find(r => r.name === 'Hl')?.text === 'l ↦ some v', 'inside tactic still projects its before-state');
+    return { outside: outside.summary ?? null, inside: inside.summary };
   });
 
   await check('ordinary Lean goal renders no Iris panel', async () => {

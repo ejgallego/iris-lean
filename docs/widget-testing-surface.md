@@ -36,6 +36,21 @@ below the standard Tactic state. Native enclosing-subterm selection and term
 keyboard policy remain gaps. Subterm highlighting is deferred: Lean 4.35 exports
 whole-goal diffing but keeps its per-expression helpers internal.
 
+Round E projection-label follow-up: summaries explicitly say
+`before wp_store · changes Hl and the goal` or
+`before imodintro · only the goal changes`. Outside a tactic the summary remains
+absent. Model assertions cover changed, target-only, unchanged, closed and
+unavailable comparisons. The browser checks the label even at an after-side
+cursor position; the real VS Code gate adds a comment-to-after-side transition
+and passes **21/21**, including the existing continuity checks. Validation:
+`lake build IrisTest +Iris.ProofMode.Widget:vir +IrisTest.ProofMode.WidgetRich:vir
++IrisTest.ProofMode.WidgetTour:vir`, `lake test`,
+`node scripts/widget-browser-smoke.mjs`, and
+`node scripts/vscode-e2e/widget-vscode.test.mjs`. Real-host evidence:
+`.tmp/vscode-e2e-runs/2026-11-05T15-36-31-328Z/`.
+The separate [rich-rendering spike report](widget-rich-rendering-spike.md)
+records the paired captures, line counts and RPC/package costs; it remains opt-in.
+
 
 ## Guided demo tour (Round C)
 

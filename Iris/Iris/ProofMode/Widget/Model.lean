@@ -162,18 +162,18 @@ def joinNames (names : List String) : String :=
   | last :: rest => String.intercalate ", " rest.reverse ++ " and " ++ last
 
 public def DisplayGoal.changeSummary (goal : DisplayGoal) (comparison : DisplayComparison) : String := Id.run do
-  let tactic := comparison.tactic
+  let projection := "before " ++ comparison.tactic ++ " · "
   if let some reason := comparison.unavailable then
-    return tactic ++ ": comparison unavailable — " ++ reason
-  if comparison.closed then return tactic ++ " closes this goal"
+    return projection ++ "comparison unavailable — " ++ reason
+  if comparison.closed then return projection ++ "closes this goal"
   let existing := (goal.persistent ++ goal.spatial).filter fun h =>
     !(comparison.hypothesisAnnotations h).isEmpty
   let added := (comparison.additions .persistent ++ comparison.additions .spatial).map (·.1.name)
   let names := (existing.map (·.name)).toList ++ added.toList.eraseDups
   let targetChanged := !(comparison.targetAnnotations).isEmpty
   if names.isEmpty then
-    return tactic ++ if targetChanged then " only changes the goal" else " changes nothing in Iris"
-  return tactic ++ " changes " ++ joinNames (names ++ if targetChanged then ["the goal"] else [])
+    return projection ++ if targetChanged then "only the goal changes" else "changes nothing in Iris"
+  return projection ++ "changes " ++ joinNames (names ++ if targetChanged then ["the goal"] else [])
 
 /-- Shared by the server payload default and the browser compatibility check. -/
 public def widgetStateVersion : Nat := 6
