@@ -8,6 +8,7 @@ module
 import Lean.Parser.Term
 public meta import Iris.Std.DelabRule
 public import Iris.Init
+public meta import Iris.Std.PPQuotations
 
 public meta section
 
@@ -16,6 +17,20 @@ open Lean Lean.Parser.Term PrettyPrinter Delaborator
 
 /- `iprop(P)` embeds a separation logic proposition `P` into `term`. -/
 syntax:max (name := iprop) "iprop(" term ")" : term
+/-- An existing typed iProp quotation keeps its parentheses but can omit its
+re-entry keyword for display. Child syntax and its semantic tags are unchanged. -/
+@[formatter Iris.BI.iprop]
+def formatIPropQuotation : Lean.PrettyPrinter.Formatter := do
+  if pp.iris.quotations.get (← read).options then
+    (← Lean.PrettyPrinter.Formatter.interpretParserDescr' iprop)
+  else
+    Lean.PrettyPrinter.Formatter.visitArgs do
+      Lean.PrettyPrinter.Formatter.symbolNoAntiquot.formatter ")"
+      Lean.PrettyPrinter.Formatter.categoryFormatter `term
+      let stx ← Lean.Syntax.MonadTraverser.getCur
+      Lean.PrettyPrinter.Formatter.pushToken stx.getHeadInfo "(" false
+      Lean.Syntax.MonadTraverser.goLeft
+
 /- `term(t)` escapes from an `iprop(…)` embedding. -/
 syntax:max "term(" term ")" : term
 

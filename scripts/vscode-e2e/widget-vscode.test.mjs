@@ -161,8 +161,8 @@ try {
   });
 
   for (const [marker, cell, targetPrefix] of [
-    ['widget-position-spin-open', '▷ l ↦ some hl_val(#b)', 'WP '],
-    ['widget-position-spin-stored', 'l ↦ some hl_val(#false)', '|={'],
+    ['widget-position-spin-open', '▷ l ↦ some #b', 'WP '],
+    ['widget-position-spin-stored', 'l ↦ some #false', '|={'],
   ])
     await check(`spinlock ${marker.split('-').at(-1)}`, async () => {
       await at(marker);
@@ -231,6 +231,46 @@ try {
       `globalThis.__irisFold.isConnected && globalThis.__irisFold.dataset.invariantOpen === 'true' &&
        !globalThis.__irisFoldNative.isConnected && !!globalThis.__irisFold.querySelector('[data-term-id$="-body"] [data-has-tooltip-on-hover]')`), 20000, 500);
     return { expanded: true, identityPreserved: true, nativeChildReplaced: true };
+  });
+
+  await check('shortened HeapLang values retain hover and definition navigation', async () => {
+    await at('widget-position-spin-open');
+    await waitWidget('short values', w => w.tactics?.includes('wp_store') && w.text.includes('some #b'));
+    await infoviewEval(vs, `(() => {
+      const w = document.querySelector('[data-iris-proof-mode-widget]');
+      if (w.textContent.includes('hl_val(') || w.textContent.includes('iprop(')) throw new Error('quotation wrapper remains');
+      const b = [...w.querySelectorAll('[data-has-tooltip-on-hover]')].find(e => e.textContent === 'b' && !e.querySelector('[data-has-tooltip-on-hover]'));
+      if (!b) throw new Error('short literal variable tag missing');
+      for (const type of ['pointerover', 'pointermove', 'mouseover', 'mousemove'])
+        b.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true }));
+    })()`);
+    await vs.until('short literal Bool hover', () => infoviewEval(vs,
+      `Array.from(document.querySelectorAll('.tooltip')).some(e => e.textContent.includes('b : Bool'))`), 20000, 500);
+    const standard = await infoviewEval(vs, `(() => [...document.querySelectorAll('[data-has-tooltip-on-hover]')]
+      .filter(e => !e.closest('[data-iris-proof-mode-widget]') && e.textContent.includes('#false'))
+      .map(e => e.textContent))()`);
+    assert(standard.length && standard.every(s => !s.includes('hl_val(')), 'demo option did not shorten standard Tactic state');
+    try {
+      await infoviewEval(vs, `(() => {
+        const w = document.querySelector('[data-iris-proof-mode-widget]');
+        const leaf = [...w.querySelectorAll('[data-resource-name="Hpt"] [data-has-tooltip-on-hover]')]
+          .find(e => e.textContent === 'false' && !e.querySelector('[data-has-tooltip-on-hover]'));
+        if (!leaf) throw new Error('short false constant tag missing');
+        leaf.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+      })()`);
+      const destination = await vs.until('short constant definition', async () => {
+        const editor = await vs.driver({ op: 'activeEditor' });
+        return editor?.uri.endsWith('/Init/Prelude.lean') ? editor : undefined;
+      }, 20000, 500);
+      await vs.until('infoview follows short constant definition', () => infoviewEval(vs,
+        `/Prelude\\.lean:\\d+/.test(document.body.innerText)`), 90000, 500);
+      return { hover: 'b : Bool', destination, standard };
+    } finally {
+      await vs.driver({ op: 'open', file });
+      await vs.until('infoview returns from short constant', () => infoviewEval(vs,
+        `/WidgetDemo\\.lean:\\d+/.test(document.body.innerText)`), 90000, 500);
+      await waitWidget('SpinLock return', w => w.tactics?.includes('wp_store') && w.text.includes('some #b'));
+    }
   });
 
   await check('spinlock iframe marks only Hpt leaving the context', async () => {

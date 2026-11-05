@@ -23,7 +23,11 @@ Each name below has the prefix `widget-position-` in the file.
 - **feedback:** which changes matter—ownership, modalities, masks, invariants—and which real proof should we try next?
 
 The HeapLang example is adapted from the heap tactic tests; SpinLock is the
-complete library `release_spec` proof. For an optional notation discussion,
+complete library `release_spec` proof. It also uses the experimental
+`set_option pp.iris.quotations false in`, shortening value and iProp wrappers
+in the ordinary Tactic state. The widget uses that display option throughout;
+[the POC note](widget-quotation-poc.md) explains the retained wrappers and limits.
+For an optional notation discussion,
 [the offline MathML gallery](notation-gallery/index.html) contains manually
 authored specimens and mock inspections, not live Lean terms.
 
@@ -66,7 +70,7 @@ cd ..
 code Iris
 ```
 
-Open `IrisTest/ProofMode/WidgetDemo.lean` and use the markers below. This is the
+Open `IrisTest/ProofMode/WidgetDemo.lean` and use the presenter markers above. This is the
 [published demo branch](https://github.com/ejgallego/iris-lean/tree/feat/proof-mode-widget-demo),
 not a released extension or optional downstream widget package. Keep the
 checked-in pins; VIR is `81de859a`. The setup script verifies the matching Wasm.

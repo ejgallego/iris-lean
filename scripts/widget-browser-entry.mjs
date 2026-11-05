@@ -288,7 +288,7 @@ async function run() {
       const resources = new Map(goal.spatial.map(h => [h.name, h.proposition.text]));
       check(goal.persistent.length === 1 && goal.persistent[0].name === "Hinv", "persistent invariant");
       check(resources.size === 5 && resources.get("Hl") === "locked γ" && resources.get("HR") === "R", "ghost token and resource");
-      check(resources.get("Hpt") === (stored ? "l ↦ some hl_val(#false)" : "▷ l ↦ some hl_val(#b)"), "lock cell and later");
+      check(resources.get("Hpt") === (stored ? "l ↦ some #false" : "▷ l ↦ some #b"), "lock cell and later");
       check(resources.get("Hcond").startsWith(stored ? "if b" : "▷ if b"), "invariant condition loses later");
       check(goal.target.text.startsWith(stored ? "|={" : "WP ") && goal.target.text.includes("spinlockN"), "invariant-closing target");
       check(target().textContent === goal.target.text, "canonical SpinLock target");

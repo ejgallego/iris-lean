@@ -57,3 +57,7 @@ make a stale snapshot accidentally satisfy the next position's predicate.
 Round G removes the guided tour and its four checks. The remaining 19 checks
 cover native terms/navigation, annotations, split distribution, mask/invariant
 folding, before-state labelling and continuity while moving or typing.
+
+The quotation POC adds a twentieth check: shortened `#b` retains the native
+`b : Bool` hover, Ctrl-click on shortened `false` reaches its real definition,
+and the demo option also affects the ordinary Tactic state.

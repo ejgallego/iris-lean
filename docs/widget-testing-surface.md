@@ -88,6 +88,17 @@ counts above describe their historical checkpoints. The tour-free build and
 browser regression pass, as do all 19 remaining real VS Code checks
 (`.tmp/round-g/part1-*.log`).
 
+The quotation POC adds `IrisTest.HeapLang.PPQuotations`: exact output with the
+option on/off, unchanged nested HeapLang syntax, function-value fallback, and
+native local-variable/type tags. No existing default printer regression was
+changed. `lake build IrisTest +Iris.ProofMode.Widget:vir` (1,154 jobs), `lake test`
+and the browser gate pass. All 19 remaining VS Code cases plus shortened-term
+hover/definition navigation pass (**20/20**); the SpinLock example's ordinary
+Tactic state also uses the option. Evidence: `.tmp/round-g/part2-*.log` and
+`.tmp/vscode-e2e-runs/2026-11-05T18-27-58-634Z/`. The paired screenshots and
+[POC limitations](widget-quotation-poc.md) distinguish quotation removal from
+changes to the underlying typed terms.
+
 ## Tactic-local resource prototype (Round B)
 
 `IrisTest.ProofMode.GoalChanges` has no widget/VIR import. Complete Heap and SpinLock

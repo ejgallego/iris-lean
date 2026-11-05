@@ -86,6 +86,7 @@ open HeapLang HeapLang.SpinLock
 variable {hlc} {GF : BundledGFunctors} [HeapLangGS hlc GF] [SpinLockG GF]
 local bi (IProp GF)
 
+set_option pp.iris.quotations false in
 /--
 The complete `SpinLock.release_spec` proof, with pause points around the store
 inside the opened invariant. `Hinv` is persistent; `Hl` and `HR` supply the

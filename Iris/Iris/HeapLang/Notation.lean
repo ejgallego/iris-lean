@@ -7,6 +7,7 @@ module
 
 public import Iris.HeapLang.Syntax
 public import Lean.PrettyPrinter.Parenthesizer
+public meta import Iris.Std.PPQuotations
 
 public meta section
 namespace Iris.HeapLang
@@ -283,6 +284,20 @@ def unexpAnon : Unexpander
 def unexpNamed : Unexpander
   | `($_ $s:str) => `(hl_binder($(Lean.mkIdent <| Name.mkSimple s.getString):ident))
   | _ => throw ()
+
+/-- Format the existing quotation node; no new term grammar or unexpander is
+introduced. In particular nested values inside `hl(…)` still unpack normally. -/
+@[formatter Iris.HeapLang.«termHl_val(_)»]
+def formatValQuotation : Formatter := do
+  let body := (← Syntax.MonadTraverser.getCur)[1]
+  -- Low-precedence function values still need their explicit quotation boundary.
+  if pp.iris.quotations.get (← read).options || body[0].isToken "λ" || body[0].isToken "rec" then
+    (← Formatter.interpretParserDescr' «termHl_val(_)»)
+  else
+    Formatter.visitArgs do
+      Syntax.MonadTraverser.goLeft -- closing wrapper
+      Formatter.categoryFormatter `hl_val
+      Syntax.MonadTraverser.goLeft -- opening wrapper
 
 /-- delaborating values -/
 @[app_unexpander Val.lit]

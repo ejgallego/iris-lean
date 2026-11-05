@@ -96,7 +96,8 @@ def toDisplayGoal
     (irisGoal : IrisGoal)
     (mvarId : MVarId)
     (index : Nat)
-    (userName? : Option String) : ProjectionM DisplayGoal := do
+    (userName? : Option String) : ProjectionM DisplayGoal :=
+  withOptions (pp.iris.quotations.set · false) do
   let (_, hypotheses) ← displayHypotheses irisGoal.hyps
   let hypotheses := hypotheses.reverse
   let title := match userName? with
