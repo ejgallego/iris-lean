@@ -70,6 +70,10 @@ private partial def rootInfo? (expr : Expr) : CodeWithInfos → Option SubexprIn
     if term?.any (·.expr == expr) then some info else rootInfo? expr body
 
 private def restoreWrapperRoot (before : Expr) (code : CodeWithInfos) : MetaM CodeWithInfos := do
+  -- A custom delaborator's failure at the root reaches Lean's panic handler.
+  -- Other stripped applications use the ordinary conservative diff below.
+  unless before.isAppOfArity ``Iris.BI.BIBase.later 3 ||
+      before.isAppOfArity ``Iris.FUpd.fupd 5 do return code
   try
     let some info := rootInfo? before code | return code
     let saved := info.info.val
@@ -77,7 +81,7 @@ private def restoreWrapperRoot (before : Expr) (code : CodeWithInfos) : MetaM Co
       | .ofTermInfo term => pure term
       | .ofDelabTermInfo term => pure term.toTermInfo
       | _ => return code
-    let repaired ← saved.ctx.runMetaM term.lctx <| ppExprTagged before delabWrapper
+    let repaired ← saved.ctx.runMetaM term.lctx <| ppExprTagged before (delabWrapper <|> delabIProp)
     if repaired.stripTags != code.stripTags then return code
     -- The before term can already carry changes from another resulting goal.
     -- Reprinting for this branch must retain that earlier branch's markings.

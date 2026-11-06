@@ -65,6 +65,14 @@ variable {s : Stuckness} {E : CoPset}
 
 example (P : IProp GF) : True := by
   check_expr_diff iprop(|={E}=> P) against P marks "|={E}=> " and ""
+  -- These stripped applications are outside the specialized later/fupd printer.
+  -- Their existential body's missing root tag must not trigger that printer.
+  check_expr_diff iprop(|==> ∃ n : Nat, ⌜n = 0⌝ ∗ P)
+    against iprop(∃ n : Nat, ⌜n = 0⌝ ∗ P)
+    marks "|==> ∃ n, ⌜n = 0⌝ ∗ P" and "n"
+  check_expr_diff iprop(P ∨ ∃ n : Nat, ⌜n = 0⌝ ∗ P)
+    against iprop(∃ n : Nat, ⌜n = 0⌝ ∗ P)
+    marks "P ∨ ∃ n, ⌜n = 0⌝ ∗ P" and "n"
   trivial
 
 example (l : Loc) (b : Bool) (v v' : Val) : True := by
