@@ -77,8 +77,8 @@ Expression highlighting vendors Lean 4.35's private `exprDiff`/`addDiffTags`
 helpers, retaining their Apache 2.0 header and E.W. Ayers attribution. **Delete
 the vendor file once Lean exports these APIs.** Our adapter marks a stripped
 wrapper while leaving its identical argument quiet. If printing drops a changed
-subterm's tag but retains descendants, it marks the nearest printed ancestor;
-wholly hidden arguments stay quiet. Native text and semantic contexts are kept.
+subterm's tag but retains descendants, or hides a change below a printed atom,
+it marks the nearest printed ancestor. Hidden arguments of composite terms stay quiet.
 Failures preserve full native terms; interrupts propagate. This is a structural
 diff, not a test of logical equivalence, and WP-to-fupd changes can be coarse.
 

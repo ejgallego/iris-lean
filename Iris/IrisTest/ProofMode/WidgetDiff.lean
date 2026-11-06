@@ -79,6 +79,23 @@ example (l : Loc) (b : Bool) (v v' : Val) : True := by
   check_expr_diff iprop(l ↦ some hl_val(#b)) against iprop(l ↦ some hl_val(#false))
     marks "b" and "false"
   check_expr_diff iprop(l ↦ some v) against iprop(l ↦ some v') marks "v" and "v'"
+  check_expr_diff iprop(l ↦ some hl_val(#0)) against iprop(l ↦ some hl_val(#21))
+    marks "0" and "21"
+  check_expr_diff iprop(l ↦ some hl_val(#0)) against iprop(l ↦ some hl_val(#2))
+    marks "0" and "2"
+  trivial
+
+example (P Q : Nat → IProp GF) (m n : Nat) : True := by
+  check_expr_diff (P 2) against (P 1) marks "2" and "1"
+  check_expr_diff (Q 2) against (Q 1) marks "2" and "1"
+  check_expr_diff iprop(▷^[m + n + 6] |={E}=> P 0)
+    against iprop(▷^[m + n + 3] |={E}=> P 0) marks "6" and "3"
+  check_expr_diff iprop(▷^[m + n + 3] |={E}=> P 0)
+    against iprop(▷^[m + n + 1] |={E}=> P 0) marks "3" and "1"
+  check_expr_diff iprop(£ (m + n + 6) : IProp GF) against iprop(£ (m + n + 3) : IProp GF)
+    marks "6" and "3"
+  check_expr_diff iprop(£ (m + n + 3) : IProp GF) against iprop(£ (m + n + 1) : IProp GF)
+    marks "3" and "1"
   trivial
 
 example (l : Loc) (v : Val) (Φ : Val → IProp GF) : True := by
