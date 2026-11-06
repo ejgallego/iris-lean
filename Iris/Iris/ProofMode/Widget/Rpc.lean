@@ -30,6 +30,28 @@ open Lean Lean.Meta Lean.Server Qq
 open Lean.Widget (CodeWithInfos InteractiveGoal ppExprTagged)
 open Iris.BI
 
+private partial def tacticTokens : Syntax → Array (String × Bool)
+  | .atom _ text => #[(text, false)]
+  | .ident _ raw _ _ => #[(raw.toString, true)]
+  | .node _ _ args => args.flatMap tacticTokens
+  | .missing => #[]
+
+/-- Presentation only: leading keywords and the first identifier argument, with an
+ellipsis for omitted arguments. Read syntax leaves so comments never become labels. -/
+def tacticLabel (stx : Syntax) : String := Id.run do
+  let tokens := tacticTokens stx
+  let mut words := #[]
+  for (text, isId) in tokens do
+    if !words.isEmpty && !isId &&
+        (["with", "as", "using", "at"].contains text ||
+         !text.toList.all (fun c => c.isAlpha || c.isDigit || c == '_')) then break
+    words := words.push text
+    if isId then break
+  let head := String.intercalate " " words.toList
+  if words.size < tokens.size || head.length > 30 then
+    return (String.ofList (head.toList.take 29)).trimAsciiEnd.toString ++ "…"
+  return head
+
 /-- Cursor position supplied by VIR when refreshing the widget. -/
 structure StateRequest where
   pos : Lsp.Position
@@ -216,8 +238,7 @@ def state (params : StateRequest) : RequestM (RequestTask SnapshotReply) := do
             (toDisplayGoal before.iris before.id displayGoals.size
               (if userName.isAnonymous then none else some (toString userName))).run codes
           codes := nextCodes
-          let label := (ti.stx.getRange?.map fun range =>
-            String.Pos.Raw.extract doc.meta.text.source range.start range.stop).getD (toString ti.stx.getKind)
+          let label := tacticLabel ti.stx
           let (display, nextCodes) ← displayComparison label comparison goal codes
           codes := nextCodes
           displayGoals := displayGoals.push { goal with comparison? := some display }

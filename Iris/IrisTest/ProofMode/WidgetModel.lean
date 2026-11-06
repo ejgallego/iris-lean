@@ -22,7 +22,7 @@ def goal : DisplayGoal := {
   id := "before", index := 0, title := "goal 1"
   persistent := #[hp], spatial := #[hq, hs], target := term "Q ∗ S" }
 def split : DisplayComparison := {
-  tactic := "isplitr [HQ HS]", beforeId := "before"
+  tactic := "isplitr…", beforeId := "before"
   branches := #[
     { id := "left", index := 0, target? := some (term "P"), targetChanged := true
       resources := #[resource "HP" .preserved (some hp), resource "HQ" .removed none, resource "HS" .removed none] },
@@ -32,19 +32,19 @@ def split : DisplayComparison := {
 
 -- Shared persistent resources are quiet; spatial destinations use successor order.
 #guard (split.hypothesisAnnotations hp).isEmpty
-#guard (split.hypothesisAnnotations hq).map (·.lead) == #["isplitr: goal 2"]
+#guard (split.hypothesisAnnotations hq).map (·.lead) == #["isplitr…: goal 2"]
 #guard (split.hypothesisAnnotations hs).map (·.kind) == #[.distributed]
-#guard split.targetAnnotations.map (·.lead) == #["isplitr: goal 1 ⊢ ", "isplitr: goal 2 ⊢ "]
-#guard goal.changeSummary split == "before isplitr [HQ HS] · changes HQ, HS and the goal"
+#guard split.targetAnnotations.map (·.lead) == #["isplitr…: goal 1 ⊢ ", "isplitr…: goal 2 ⊢ "]
+#guard goal.changeSummary split == "before isplitr… · changes HQ, HS and the goal"
 
 -- Ordinary successors retain their real numbering without hiding Iris branches.
-def mixed := { split with tactic := "iaaccintro [HQ HS]", branches :=
+def mixed := { split with tactic := "iaaccintro…", branches :=
   #[{ id := "side-condition", index := 0, leanGoal := true },
     { split.branches[0] with index := 1 }, { split.branches[1] with index := 2 }] }
 #guard mixed.unavailable.isNone
-#guard (mixed.hypothesisAnnotations hq).map (·.lead) == #["iaaccintro: goal 3"]
-#guard mixed.targetAnnotations.map (·.lead) == #["iaaccintro: goal 1 is a Lean goal",
-  "iaaccintro: goal 2 ⊢ ", "iaaccintro: goal 3 ⊢ "]
+#guard (mixed.hypothesisAnnotations hq).map (·.lead) == #["iaaccintro…: goal 3"]
+#guard mixed.targetAnnotations.map (·.lead) == #["iaaccintro…: goal 1 is a Lean goal",
+  "iaaccintro…: goal 2 ⊢ ", "iaaccintro…: goal 3 ⊢ "]
 #guard (mixed.targetAnnotations[0]?.bind (·.term?)).isNone
 
 def changed : DisplayComparison := {
@@ -72,7 +72,7 @@ def moved : DisplayComparison := { changed with branches := #[
 #guard (moved.hypothesisAnnotations hq).map (·.lead) == #["wp_store: □ "]
 def gone : DisplayComparison := { changed with tactic := "iframe HQ", branches := #[
   { id := "after", resources := #[resource "HQ" .removed none] }] }
-#guard (gone.hypothesisAnnotations hq).map (·.lead) == #["iframe: no longer in context"]
+#guard (gone.hypothesisAnnotations hq).map (·.lead) == #["iframe HQ: no longer in context"]
 #guard (gone.hypothesisAnnotations hq).map (·.kind) == #[.gone]
 def added : DisplayComparison := { changed with tactic := "iintro", branches := #[
   { id := "after", resources := #[resource "HS" .added (some hs), resource "HQ" .added (some hq)] }] }
@@ -87,7 +87,7 @@ def closed : DisplayComparison := { tactic := "iexact HQ", beforeId := "before",
 def unavailable := { split with branches := #[{ id := "unknown", unavailable? := some "not Iris" }] }
 #guard (unavailable.hypothesisAnnotations hq).isEmpty && unavailable.targetAnnotations.isEmpty
 #guard (unavailable.additions .spatial).isEmpty
-#guard goal.changeSummary unavailable == "can't compare Iris goals for isplitr (goal 1)"
+#guard goal.changeSummary unavailable == "can't compare Iris goals for isplitr… (goal 1)"
 
 def quiet := { changed with tactic := "·", quiet := true }
 #guard goal.changeSummary quiet == ""

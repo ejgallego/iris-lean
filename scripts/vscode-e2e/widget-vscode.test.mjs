@@ -342,17 +342,17 @@ try {
     await at('widget-position-spin-frame');
     const w = await waitWidget('spin frame', w => w.tactics?.includes('iframe Hpt'));
     assert(w.changes.length === 1 && w.changes[0].name === 'Hpt' && w.changes[0].status === 'gone' &&
-      w.changes[0].text === '↳ iframe: no longer in context', 'neutral context departure on Hpt');
+      w.changes[0].text === '↳ iframe Hpt: no longer in context', 'neutral context departure on Hpt');
     assert(w.targets.length === 1, 'frame target annotation');
     return w;
   });
 
   await check('split distributes resources and shows both new targets', async () => {
     await at('widget-position-contexts');
-    const w = await waitWidget('split annotations', w => w.tactics?.includes('isplitr [HQ HS]'));
+    const w = await waitWidget('split annotations', w => w.tactics?.includes('isplitr…'));
     assert(w.cards.length === 1, 'one annotated before-card');
     assert(w.changes.map(r => r.name).join(' ') === 'HQ HS', 'shared persistent resources stay quiet');
-    assert(w.changes.every(r => r.status === 'distributed' && r.text === '↳ isplitr: goal 2'), 'spatial destinations');
+    assert(w.changes.every(r => r.status === 'distributed' && r.text === '↳ isplitr…: goal 2'), 'spatial destinations');
     assert(w.targets.length === 2 &&  /goal 1 ⊢\s*P/.test(w.targets[0]) && /goal 2 ⊢\s*R ∗ S/.test(w.targets[1]), 'both resulting targets in order');
     return w;
   });
@@ -361,9 +361,11 @@ try {
     await at('widget-position-par-split');
     const w = await waitWidget('parallel ownership split', w => w.tactics?.some(t => t.startsWith('iapply wp_par')));
     assert(w.cards.length === 1 && w.changes.length === 3, 'one before-card with three routed resources');
+    assert(w.tactics[0] === 'iapply wp_par…' &&
+      w.summary === 'before iapply wp_par… · changes Hl1, Hl2, K and the goal', 'short Par label and summary');
     for (const [name, goal] of [['Hl1', 1], ['Hl2', 2], ['K', 3]]) {
       const row = w.changes.find(r => r.name === name);
-      assert(row?.status === 'distributed' && row.text === `↳ iapply: goal ${goal}`, `${name} must go only to goal ${goal}`);
+      assert(row?.status === 'distributed' && row.text === `↳ iapply wp_par…: goal ${goal}`, `${name} must go only to goal ${goal}`);
     }
     assert(w.targets.length === 3, 'all three resulting targets must be visible');
     assert(/goal 1 ⊢\s*WP/.test(w.targets[0]) && w.targets[0].includes('l1 ← #21'), 'first thread target');
@@ -380,7 +382,7 @@ try {
       await waitWidget('spaced annotations at ' + marker, w => marker === 'heap-store'
         ? w.tactics?.includes('wp_store') && w.text.includes('Hframe')
         : marker === 'par-split' ? w.tactics?.some(t => t.startsWith('iapply wp_par'))
-        : w.tactics?.includes('isplitr [HQ HS]'));
+        : w.tactics?.includes('isplitr…'));
       const rows = await infoviewEval(vs, `(() => [...document.querySelectorAll('[data-iris-proof-mode-widget] [data-annotation-kind]')]
         .filter(e => e.querySelector('[data-term-id]'))
         .map(e => ({ kind: e.dataset.annotationKind, lead: e.firstElementChild.innerText })))()`);
@@ -544,7 +546,7 @@ try {
       ['spin-open', 3, 'Store inside the opened invariant.', 'wp_store'],
       ['spin-stored', 4, 'imodintro only changes the goal.', 'imodintro'],
       ['spin-frame', 5, 'iframe Hpt.', 'iframe Hpt'],
-      ['contexts', 6, 'isplitr [HQ HS] distributes spatial ownership.', 'isplitr [HQ HS]'],
+      ['contexts', 6, 'isplitr [HQ HS] distributes spatial ownership.', 'isplitr…'],
     ]) {
       await at('widget-position-' + marker);
       const t = await tourAt(index);

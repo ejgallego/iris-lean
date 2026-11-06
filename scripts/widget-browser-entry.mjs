@@ -119,7 +119,7 @@ async function run() {
     check(panel().querySelectorAll('[data-annotation-kind="target"]').length === 2, "both outcomes rendered");
     for (const name of ["HP", "HQR"]) check(!panel().querySelector(`[data-resource-name="${name}"][data-annotation-kind]`),
       "shared persistent hypothesis needs no destination annotation");
-    for (const name of ["HQ", "HS"]) check(panel().querySelector(`[data-resource-name="${name}"]`)?.textContent === "↳ isplitr: goal 2",
+    for (const name of ["HQ", "HS"]) check(panel().querySelector(`[data-resource-name="${name}"]`)?.textContent === "↳ isplitr…: goal 2",
       "spatial resource goes to the second goal");
     check([...panel().querySelectorAll('[data-hypothesis-name]')].map(e => e.dataset.hypothesisName).join(' ') === 'HP HQR HQ HS',
       "before-state context order retained at split");
@@ -133,7 +133,7 @@ async function run() {
     await action("key"); await wait("Enter expands goal", () => firstToggle.getAttribute("aria-expanded") === "true");
     await move(config.binders); await hover("n", "Nat"); await hover("m", "Nat");
     const added = panel().querySelector('[data-annotation-kind="added"]');
-    check(added?.textContent.startsWith('↳ iintro adds ∗H: ') && added.querySelector('[data-has-tooltip-on-hover]'),
+    check(added?.textContent.startsWith('↳ iintro… adds ∗H: ') && added.querySelector('[data-has-tooltip-on-hover]'),
       "new hypothesis appended with a native proposition");
 
     // A fresh snapshot avoids the native popup's already-loaded hover cache.
@@ -267,7 +267,7 @@ async function run() {
           check(row.dataset.annotationKind === (status === "removed" ? "gone" : status), `${name}: annotation kind`);
           if (status === "changed") check(row.querySelector('[data-term-id]').textContent === change.after.proposition.text,
             "native new proposition rendered below the original");
-          if (status === "removed") check(row.textContent === `↳ ${tactic.split(' ')[0]}: no longer in context`, "neutral context departure");
+          if (status === "removed") check(row.textContent === `↳ ${tactic}: no longer in context`, "neutral context departure");
         }
       }
       check(comparison.branches[0].targetChanged, `${tactic}: target changes`);
@@ -346,7 +346,7 @@ async function run() {
     await move({ ...config.contexts, character: config.contexts.character + 1 });
     check(cards().length === 1 && panel().querySelectorAll('[data-annotation-kind="target"]').length === 2,
       "after-side position still annotates one before-card with both descendants");
-    check(panel().querySelector('[data-comparison-summary]')?.textContent === 'before isplitr [HQ HS] · changes HQ, HS and the goal',
+    check(panel().querySelector('[data-comparison-summary]')?.textContent === 'before isplitr… · changes HQ, HS and the goal',
       "after-side position explicitly labels the before-state");
     await move({ ...config.split, character: config.split.character + 3 });
     check(panel().querySelector('[data-comparison-outcome="closed"]') &&

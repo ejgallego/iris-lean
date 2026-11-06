@@ -87,6 +87,7 @@ public structure DisplayBranchChange where
 
 /-- All outcomes of one before-goal, never a selected best-matching branch. -/
 public structure DisplayComparison where
+  /-- Compact syntax-derived label shared by the summary and annotations. -/
   tactic : String
   beforeId : String
   branches : Array DisplayBranchChange := #[]
@@ -135,7 +136,7 @@ namespace DisplayComparison
 
 /-- Compact source label only; never used for correspondence or tactic semantics. -/
 public def label (comparison : DisplayComparison) : String :=
-  ((comparison.tactic.trimAscii.toString.splitOn " ").head!).splitOn "\n" |>.head!
+  comparison.tactic
 
 public def unavailable (comparison : DisplayComparison) : Option String :=
   comparison.unavailable?.orElse fun _ => comparison.branches.findSome? fun branch =>
@@ -218,7 +219,7 @@ def joinNames (names : List String) : String :=
 
 public def DisplayGoal.changeSummary (goal : DisplayGoal) (comparison : DisplayComparison) : String := Id.run do
   if comparison.quiet then return ""
-  let projection := "before " ++ comparison.tactic ++ " · "
+  let projection := "before " ++ comparison.label ++ " · "
   if let some reason := comparison.unavailableMessage then return reason
   if comparison.closed then return projection ++ "closes this goal"
   let existing := (goal.persistent ++ goal.spatial).filter fun h =>
