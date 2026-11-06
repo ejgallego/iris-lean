@@ -30,6 +30,16 @@ The widget uses that option throughout; see [implementation and limits](proof-mo
 Optional tour: add `public meta import IrisTest.ProofMode.WidgetTour` among the demo imports.
 Then add `show_panel_widgets [local IrisTest.ProofMode.WidgetTour.widget with IrisTest.ProofMode.WidgetTour.panelProps]` after the existing panel declaration.
 
+## Use it in your own file
+
+After setup, add both imports with your imports, and the panel line before your proofs:
+```lean
+import Iris.ProofMode.Widget
+public meta import Iris.ProofMode.Widget
+show_panel_widgets [local Lean.Vir.Infoview.widget with Iris.ProofMode.Widget.panelProps]
+```
+The card appears next to the normal Tactic state when the cursor is on an Iris goal.
+
 ## Presenter setup (existing checkout)
 
 ```bash
