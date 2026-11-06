@@ -381,6 +381,14 @@ try {
     return { cards: w.cards };
   });
 
+  await check('structural bullet keeps the before cards quiet', async () => {
+    await at('widget-position-split');
+    const w = await waitWidget('quiet bullet', w => w.present && w.cards.length === 2 && w.tactics.length === 0);
+    assert(!w.summary && w.changes.length === 0 && w.targets.length === 0, 'structural node has comparison text');
+    assert(!w.text.includes('unavailable'), 'structural node exposes a refusal');
+    return w;
+  });
+
   await check('collapse survives a cursor move in the same proof state', async () => {
     // Collapse the first card and mark both card DOM nodes so remounts are detectable.
     const before = await infoviewEval(vs, `(() => {

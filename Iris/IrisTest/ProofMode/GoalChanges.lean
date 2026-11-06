@@ -119,6 +119,19 @@ example [BI PROP] (P : PROP) : P ⊢ P := by
       (id, type, some (.const ``Nat [])) }
     unless (compareResources saved changedBinding).toOption.isNone do throwError "changed local context accepted"
     unless (compareTarget saved changedBinding).toOption.isNone do throwError "target ignored changed local context"
+    -- Quiet focus wrappers retain the before-state, even if their result list
+    -- omits the focused goal. A real tactic with that gap still explains it.
+    for stx in (#[← `(tactic| · skip), ← `(tactic| focus skip),
+        ← `(tactic| case foo => skip), ← `(tactic| next => skip),
+        Syntax.node .none ``Lean.cdotTk #[]] : Array Syntax) do
+      let info : TacticInfo := {
+        elaborator := `test, stx, mctxBefore := ← getMCtx, goalsBefore := [id]
+        mctxAfter := ← getMCtx, goalsAfter := [] }
+      let groups ← compareTactic context info
+      unless groups.size == 1 && groups.all (fun g =>
+          g.quiet && g.before.id == id && g.branches.isEmpty && !g.closed && g.unavailable?.isNone) do
+        throwError "structural node did not preserve a quiet before-state"
+    unless !(isStructural (← `(tactic| iexact HP))) do throwError "real tactic silenced"
     -- Two predecessors referring to the same successor are not a one-parent correspondence.
     id.withContext do
       let type ← id.getType

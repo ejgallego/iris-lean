@@ -11,10 +11,10 @@ followed by the target. Native infoview terms retain contextual hover and
 Ctrl/Cmd-click definition navigation. The header shows the outer WP/fupd mask;
 an invariant's namespace stays visible while its body is folded initially.
 
-Inside a tactic, the labelled card always projects its **before-state**. Changes
+Inside a tactic, the card projects its **before-state**; structural steps stay quiet. Changes
 appear immediately below the affected row as `↳ tactic: …`; unchanged rows stay
 quiet. New hypotheses follow their context, departures say “no longer in
-context”, and a closed goal is labelled closed. Splits show each resource's
+context”, and a closed goal is labelled closed. Splits show resource destinations and
 resulting Iris targets; ordinary successors get a Lean-goal label. No resource is labelled
 consumed or framed. Outside a tactic, the card shows the selected Iris state.
 

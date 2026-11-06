@@ -91,6 +91,7 @@ public structure DisplayComparison where
   beforeId : String
   branches : Array DisplayBranchChange := #[]
   closed : Bool := false
+  quiet : Bool := false
   unavailable? : Option String := none
   deriving Repr, BEq, ToJson, FromJson
 
@@ -140,9 +141,25 @@ public def unavailable (comparison : DisplayComparison) : Option String :=
   comparison.unavailable?.orElse fun _ => comparison.branches.findSome? fun branch =>
     branch.unavailable?.map fun reason => s!"goal {branch.index + 1}: {reason}"
 
+private def reasonText (tactic reason : String) : String :=
+  match reason with
+  | "goal correspondence is ambiguous" | "duplicate resource identities" =>
+    s!"can't tell which hypotheses {tactic} keeps"
+  | "the proposition domain changed" => s!"{tactic} changes the context's types; not compared"
+  | "a shared local declaration changed" => s!"{tactic} changes a hypothesis other goals share; not compared"
+  | "the resulting goal is not in Iris proof mode" => s!"{tactic} leaves Iris proof mode"
+  | "open descendants are absent from the tactic's result" => s!"{tactic}'s resulting Iris goals aren't available"
+  | _ => s!"can't compare Iris goals for {tactic}"
+
+public def unavailableMessage (comparison : DisplayComparison) : Option String :=
+  (comparison.unavailable?.map (reasonText comparison.label)).orElse fun _ =>
+    comparison.branches.findSome? fun branch =>
+      branch.unavailable?.map fun reason =>
+        s!"{reasonText comparison.label reason} (goal {branch.index + 1})"
+
 public def hypothesisAnnotations (comparison : DisplayComparison)
     (hypothesis : DisplayHypothesis) : Array Annotation := Id.run do
-  if comparison.closed || comparison.unavailable.isSome then return #[]
+  if comparison.quiet || comparison.closed || comparison.unavailable.isSome then return #[]
   let outcomes := comparison.branches.filterMap fun branch =>
     (branch.resources.find? (·.id == hypothesis.id)).map (branch, ·)
   let surviving := outcomes.filter (·.2.after?.isSome)
@@ -166,7 +183,7 @@ public def hypothesisAnnotations (comparison : DisplayComparison)
 /-- Append additions in each successor's display order, within their new context. -/
 public def additions (comparison : DisplayComparison) (kind : ContextKind) :
     Array (DisplayHypothesis × Annotation) := Id.run do
-  if comparison.closed || comparison.unavailable.isSome then return #[]
+  if comparison.quiet || comparison.closed || comparison.unavailable.isSome then return #[]
   return comparison.branches.flatMap fun branch =>
     branch.resources.filterMap fun change => do
       let after ← change.after?
@@ -178,7 +195,7 @@ public def additions (comparison : DisplayComparison) (kind : ContextKind) :
           term? := some after.proposition, branchId? := some branch.id })
 
 public def targetAnnotations (comparison : DisplayComparison) : Array Annotation := Id.run do
-  if comparison.closed || comparison.unavailable.isSome then return #[]
+  if comparison.quiet || comparison.closed || comparison.unavailable.isSome then return #[]
   let split := comparison.branches.size > 1
   return comparison.branches.filterMap fun branch => do
     if branch.leanGoal then
@@ -200,9 +217,9 @@ def joinNames (names : List String) : String :=
   | last :: rest => String.intercalate ", " rest.reverse ++ " and " ++ last
 
 public def DisplayGoal.changeSummary (goal : DisplayGoal) (comparison : DisplayComparison) : String := Id.run do
+  if comparison.quiet then return ""
   let projection := "before " ++ comparison.tactic ++ " · "
-  if let some reason := comparison.unavailable then
-    return projection ++ "comparison unavailable — " ++ reason
+  if let some reason := comparison.unavailableMessage then return reason
   if comparison.closed then return projection ++ "closes this goal"
   let existing := (goal.persistent ++ goal.spatial).filter fun h =>
     !(comparison.hypothesisAnnotations h).isEmpty

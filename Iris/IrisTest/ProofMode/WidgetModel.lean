@@ -87,7 +87,21 @@ def closed : DisplayComparison := { tactic := "iexact HQ", beforeId := "before",
 def unavailable := { split with branches := #[{ id := "unknown", unavailable? := some "not Iris" }] }
 #guard (unavailable.hypothesisAnnotations hq).isEmpty && unavailable.targetAnnotations.isEmpty
 #guard (unavailable.additions .spatial).isEmpty
-#guard goal.changeSummary unavailable == "before isplitr [HQ HS] · comparison unavailable — goal 1: not Iris"
+#guard goal.changeSummary unavailable == "can't compare Iris goals for isplitr (goal 1)"
+
+def quiet := { changed with tactic := "·", quiet := true }
+#guard goal.changeSummary quiet == ""
+#guard (quiet.hypothesisAnnotations hq).isEmpty && quiet.targetAnnotations.isEmpty
+#guard (quiet.additions .spatial).isEmpty
+#guard ([
+  ("goal correspondence is ambiguous", "can't tell which hypotheses tac keeps"),
+  ("duplicate resource identities", "can't tell which hypotheses tac keeps"),
+  ("the proposition domain changed", "tac changes the context's types; not compared"),
+  ("a shared local declaration changed", "tac changes a hypothesis other goals share; not compared"),
+  ("the resulting goal is not in Iris proof mode", "tac leaves Iris proof mode"),
+  ("open descendants are absent from the tactic's result", "tac's resulting Iris goals aren't available")
+  ] : List (String × String)).all fun (reason, message) =>
+    goal.changeSummary { tactic := "tac", beforeId := "before", unavailable? := some reason } == message
 #guard match (Lean.fromJson? (Lean.toJson { goal with comparison? := some split }) : Except String DisplayGoal) with
   | .ok decoded => decoded.comparison? == some split
   | .error _ => false

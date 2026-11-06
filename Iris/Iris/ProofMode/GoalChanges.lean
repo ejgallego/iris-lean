@@ -66,7 +66,19 @@ structure Comparison where
   before : SavedGoal
   branches : Array Branch := #[]
   closed : Bool := false
+  quiet : Bool := false
   unavailable? : Option String := none
+
+/-- Grouping/focus nodes do not describe a proof step to annotate. Inspect syntax,
+not source labels: tactics inside these wrappers retain their own comparisons. -/
+def isStructural (stx : Syntax) : Bool :=
+  [``Lean.cdotTk, ``Lean.cdot, `focus, ``Lean.Parser.Tactic.focus,
+    ``Lean.Parser.Tactic.case, ``Lean.Parser.Tactic.case',
+    ``Lean.Parser.Tactic.tacticSeq, ``Lean.Parser.Tactic.tacticSeq1Indented,
+    ``Lean.Parser.Tactic.tacticSeqBracketed].contains stx.getKind ||
+    match stx with
+    | `(tactic| next $_args:binderIdent* => $_body:tacticSeq) => true
+    | _ => false
 
 private def uniqueIds (resources : Array Resource) : Bool := Id.run do
   let mut seen := #[]
@@ -119,6 +131,9 @@ def compareTactic (context : ContextInfo) (tactic : TacticInfo) : IO (Array Comp
   let afterContext := { context with mctx := tactic.mctxAfter }
   let beforeIds := tactic.goalsBefore.toArray
   let afterIds := tactic.goalsAfter.toArray
+  if isStructural tactic.stx then
+    return (← beforeIds.mapM (readGoal? beforeContext)).filterMap fun before? =>
+      before?.map fun before => { before, quiet := true }
   let descendants ← afterContext.runMetaM {} <| beforeIds.mapM fun id => getMVars (.mvar id)
   let parents := afterIds.map fun id => beforeIds.zipIdx.filterMap fun (parent, index) =>
     if parent == id || descendants[index]!.contains id then some parent else none

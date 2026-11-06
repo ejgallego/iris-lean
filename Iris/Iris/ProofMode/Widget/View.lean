@@ -209,7 +209,7 @@ def goalCard : RuntimeM (Client.Component GoalProps) := do
       aria-expanded={(← JsValue.ofBool expanded)} aria-controls={contentId} onClick={toggle}
       style={(← Style.collapseButton)}>{Html.text (if expanded then "−" else "+")}</button></header>}
     let mut children : Array (Js Node) := #[]
-    if let some comparison := goal.comparison? then
+    if let some comparison := goal.comparison?.filter (!·.quiet) then
       let summary := goal.changeSummary comparison
       children := children.push (← jsx%{<div key="comparison" data-comparison-summary="true"
         data-tactic={(← JsValue.ofString comparison.tactic)}

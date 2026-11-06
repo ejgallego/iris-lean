@@ -187,7 +187,7 @@ private def displayComparison (tactic : String) (comparison : GoalChanges.Compar
       targetChanged := branch.targetChanged, unavailable? := branch.unavailable? }
   return ({
     tactic, beforeId := toString before.id.name, branches
-    closed := comparison.closed, unavailable? := comparison.unavailable?
+    closed := comparison.closed, quiet := comparison.quiet, unavailable? := comparison.unavailable?
   }, codes)
 
 /-- Use Lean's goal selection once for both the current view and the comparison.
