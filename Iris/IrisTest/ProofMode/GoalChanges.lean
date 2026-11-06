@@ -6,6 +6,7 @@ module
 
 import Iris.HeapLang.ProofMode
 import Iris.HeapLang.Lib.SpinLock
+import Iris.ProgramLogic.Atomic
 public meta import Iris.ProofMode.GoalChanges
 
 /-! Widget-independent resource correspondence checks on complete HeapLang proofs. -/
@@ -60,6 +61,36 @@ example [BI PROP] (P Q : PROP) : ⊢ P -∗ Q -∗ P ∗ Q := by
   check_changes "HP:preserved HQ:removed | HQ:preserved HP:removed" target "changed changed" in isplitr [HQ]
   · check_changes "closed" target "closed" in iexact HP
   · iexact HQ
+
+elab "check_mixed_branches " tactic:tactic : tactic => do
+  let before ← getMCtx
+  let goalsBefore ← getGoals
+  evalTactic tactic
+  let context : ContextInfo := { (← CommandContextInfo.save) with }
+  let info : TacticInfo := {
+    elaborator := `check_mixed_branches, stx := tactic, mctxBefore := before, goalsBefore
+    mctxAfter := ← getMCtx, goalsAfter := ← getGoals }
+  let comparisons ← compareTactic context info
+  unless comparisons.size == 1 do throwError "expected one before-goal"
+  let some comparison := comparisons[0]? | throwError "missing comparison"
+  unless comparison.unavailable?.isNone && comparison.branches.all (·.unavailable?.isNone) do
+    throwError "ordinary successor hid comparable Iris goals"
+  unless comparison.branches.map (·.after?.isSome) == #[true, true, true, false] &&
+      comparison.branches.map (·.index) == #[0, 1, 2, 3] do
+    throwError "successor kind or numbering lost"
+  unless (comparison.branches.take 3).all (!·.resources.isEmpty) do
+    throwError "Iris resource outcomes lost"
+
+open Iris.BI Std in
+example {PROP : Type} [BI PROP] [BIFUpdate PROP] {TA TB : Tele}
+    {Eo Ei : CoPset} {α : TA.Arg → PROP} {β : TA.Arg → TB.Arg → PROP}
+    (HEi : Ei ⊆ Eo) (x : TA.Arg) {Q R : PROP} (hα : α x = iprop(Q ∗ R)) :
+    Q ∗ R ⊢ atomic_acc Eo Ei α (α x) β β := by
+  iintro ⟨HQ, HR⟩
+  check_mixed_branches iaaccintro [HQ HR]
+  · rw [hα]; iframe
+  · iintro Hα !> //
+  · iintro %y Hβ !> //
 
 
 /-- Refuse ambiguous identity; changing a printed name cannot establish correspondence. -/

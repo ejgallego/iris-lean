@@ -140,12 +140,14 @@ def compareTactic (context : ContextInfo) (tactic : TacticInfo) : IO (Array Comp
         let index := (afterIds.findIdx? (· == child)).getD 0
         let after? ← readGoal? afterContext child
         let some after := after?
-          | return { id := child, index, after?, unavailable? := some "the resulting goal is not in Iris proof mode" : Branch }
+          | return { id := child, index, after? : Branch }
         match compareResources before after with
         | .ok resources =>
           return { id := child, index, after?, resources, targetChanged := before.target != after.target : Branch }
         | .error reason => return { id := child, index, after?, unavailable? := some reason : Branch }
-      result := result.push { before, branches }
+      let unavailable? := if branches.all (·.after?.isNone) then
+        some "the resulting goal is not in Iris proof mode" else none
+      result := result.push { before, branches, unavailable? }
   return result
 
 end

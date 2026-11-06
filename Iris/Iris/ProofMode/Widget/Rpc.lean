@@ -183,6 +183,7 @@ private def displayComparison (tactic : String) (comparison : GoalChanges.Compar
     let resources := ordered ++ resources.filter (·.after?.isNone)
     branches := branches.push {
       id := toString branch.id.name, index := branch.index, target?, resources
+      leanGoal := branch.after?.isNone && branch.unavailable?.isNone
       targetChanged := branch.targetChanged, unavailable? := branch.unavailable? }
   return ({
     tactic, beforeId := toString before.id.name, branches

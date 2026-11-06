@@ -37,6 +37,16 @@ def split : DisplayComparison := {
 #guard split.targetAnnotations.map (·.lead) == #["isplitr: goal 1 ⊢ ", "isplitr: goal 2 ⊢ "]
 #guard goal.changeSummary split == "before isplitr [HQ HS] · changes HQ, HS and the goal"
 
+-- Ordinary successors retain their real numbering without hiding Iris branches.
+def mixed := { split with tactic := "iaaccintro [HQ HS]", branches :=
+  #[{ id := "side-condition", index := 0, leanGoal := true },
+    { split.branches[0] with index := 1 }, { split.branches[1] with index := 2 }] }
+#guard mixed.unavailable.isNone
+#guard (mixed.hypothesisAnnotations hq).map (·.lead) == #["iaaccintro: goal 3"]
+#guard mixed.targetAnnotations.map (·.lead) == #["iaaccintro: goal 1 is a Lean goal",
+  "iaaccintro: goal 2 ⊢ ", "iaaccintro: goal 3 ⊢ "]
+#guard (mixed.targetAnnotations[0]?.bind (·.term?)).isNone
+
 def changed : DisplayComparison := {
   tactic := "wp_store", beforeId := "before"
   branches := #[{

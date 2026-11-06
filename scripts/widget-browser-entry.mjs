@@ -113,7 +113,7 @@ async function run() {
     const packageCalls = () => host.calls.filter(c => c.method === "Lean.Vir.Infoview.buildIRPackage").length;
     const startupPackages = packageCalls();
     const snapshot = await host.snapshot(config.contexts), payload = JSON.parse(snapshot.display);
-    check(payload.version === 7 && snapshot.codes.length > 0, "versioned native terms");
+    check(payload.version === 8 && snapshot.codes.length > 0, "versioned native terms");
     check(target().textContent === payload.goals[0].target.text, "canonical native target");
     check(payload.goals[0].comparison.branches.length === 2, "branching tactic retains both outcomes");
     check(panel().querySelectorAll('[data-annotation-kind="target"]').length === 2, "both outcomes rendered");

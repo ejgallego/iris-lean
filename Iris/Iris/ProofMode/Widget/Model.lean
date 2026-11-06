@@ -80,6 +80,7 @@ public structure DisplayBranchChange where
   index : Nat := 0
   target? : Option RenderedTerm := none
   targetChanged : Bool := false
+  leanGoal : Bool := false
   resources : Array DisplayResourceChange := #[]
   unavailable? : Option String := none
   deriving Repr, BEq, ToJson, FromJson
@@ -111,12 +112,13 @@ public structure DisplayGoal where
 
 /-- One subordinate annotation; all terms refer to the current snapshot's native code. -/
 public inductive AnnotationKind where
-  | changed | gone | added | distributed | target
+  | changed | gone | added | distributed | target | leanGoal
   deriving Repr, BEq
 
 public def AnnotationKind.label : AnnotationKind → String
   | .changed => "changed" | .gone => "gone" | .added => "added"
   | .distributed => "distributed" | .target => "target"
+  | .leanGoal => "lean-goal"
 
 public structure Annotation where
   kind : AnnotationKind
@@ -179,7 +181,10 @@ public def targetAnnotations (comparison : DisplayComparison) : Array Annotation
   if comparison.closed || comparison.unavailable.isSome then return #[]
   let split := comparison.branches.size > 1
   return comparison.branches.filterMap fun branch => do
-    if !split && !branch.targetChanged then none else
+    if branch.leanGoal then
+      some { kind := .leanGoal, lead := s!"{comparison.label}: goal {branch.index + 1} is a Lean goal"
+             branchId? := some branch.id }
+    else if !split && !branch.targetChanged then none else
       let target ← branch.target?
       some {
         kind := .target
@@ -209,7 +214,7 @@ public def DisplayGoal.changeSummary (goal : DisplayGoal) (comparison : DisplayC
   return projection ++ "changes " ++ joinNames (names ++ if targetChanged then ["the goal"] else [])
 
 /-- Shared by the server payload default and the browser compatibility check. -/
-public def widgetStateVersion : Nat := 7
+public def widgetStateVersion : Nat := 8
 
 /-- Versioned payload transported from the Lean server to the VIR component. -/
 public structure WidgetState where

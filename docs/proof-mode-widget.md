@@ -15,7 +15,7 @@ Inside a tactic, the labelled card always projects its **before-state**. Changes
 appear immediately below the affected row as `↳ tactic: …`; unchanged rows stay
 quiet. New hypotheses follow their context, departures say “no longer in
 context”, and a closed goal is labelled closed. Splits show each resource's
-resulting goals and all resulting targets. No label claims that a resource was
+resulting Iris targets; ordinary successors get a Lean-goal label. No resource is labelled
 consumed or framed. Outside a tactic, the card shows the selected Iris state.
 
 Ingress is `Iris.ProofMode.parseIrisGoal?` on an instantiated goal expression in
