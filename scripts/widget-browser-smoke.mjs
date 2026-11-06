@@ -99,6 +99,7 @@ await withCleanup(async () => {
     heapStore: position("widget-position-heap-store"),
     heapLoad: position("widget-position-heap-load"),
     heapPost: position("widget-position-heap-post"),
+    parSplit: position("widget-position-par-split"),
     spinOpen: position("widget-position-spin-open"),
     spinStored: position("widget-position-spin-stored"),
     spinFrame: position("widget-position-spin-frame"),

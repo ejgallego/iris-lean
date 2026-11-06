@@ -12,6 +12,7 @@ Each marker has the prefix `widget-position-`.
 - **heap-store:** `wp_store` updates `Hl`; `Hframe` stays untouched.
 - **heap-load:** `wp_load` only changes the goal.
 - **heap-post:** `iframe` discharges both cells; the target reduces to pure equality.
+- **par-split:** `wp_par` sends `Hl1` to thread 1, `Hl2` to thread 2, and `K` to the continuation (goal 3).
 - **spin-open:** show the reduced mask, expand `Hinv`, and follow `Hpt`/`Hcond`.
 - **spin-stored:** `imodintro` strips only the goal's update modality.
 - **spin-frame:** `iframe Hpt`; that resource leaves the context and the goal reduces.

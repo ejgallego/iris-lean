@@ -9,6 +9,7 @@ public meta import Iris.ProofMode.Widget
 import Iris.ProofMode
 public meta import Iris.ProofMode
 import Iris.HeapLang.ProofMode
+import Iris.HeapLang.Lib.Par
 import Iris.HeapLang.Lib.SpinLock
 
 namespace IrisTest.ProofMode.WidgetDemo
@@ -78,6 +79,30 @@ example {l l' : Loc} {v v' w : Val} :
   itrivial
 
 end Heap
+
+section Parallel
+
+open HeapLang HeapLang.Par HeapLang.Spawn
+
+-- From IrisTest/HeapLang/Par.lean: the wp_par split, starting with two owned cells.
+example {hlc} {GF : BundledGFunctors} [HeapLangGS hlc GF] [SpawnG GF] (l1 l2 : Loc) :
+    {{ (l1 ↦ some hl_val(#0)) ∗ (l2 ↦ some hl_val(#0)) }}
+      hl((#l1 ← #21) ‖ (#l2 ← #2))
+      {{ (r1 r2 : Val), RET hl_val((&r1, &r2));
+         l1 ↦ some hl_val(#21) ∗ l2 ↦ some hl_val(#2) }} := by
+  iintro %Φ ⟨Hl1, Hl2⟩ K
+  wp_pures
+  -- widget-position-par-split
+  iapply wp_par (fun _ => l1 ↦ some hl_val(#21)) (fun _ => l2 ↦ some hl_val(#2))
+    $$ [Hl1] [Hl2] [K]
+  · wp_store; imodintro; iexact Hl1
+  · wp_store; imodintro; iexact Hl2
+  · iintro %r1 %r2 ⟨Hl1, Hl2⟩
+    inext
+    iapply K
+    iframe
+
+end Parallel
 
 section Lock
 

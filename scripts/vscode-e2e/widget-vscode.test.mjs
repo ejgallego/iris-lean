@@ -36,7 +36,7 @@ async function check(name, f) {
   try { const detail = await f(); results.push({ name, ok: true, ms: Date.now() - t0, detail }); console.log(`ok   ${name}`); }
   catch (e) { results.push({ name, ok: false, ms: Date.now() - t0, error: e.message }); console.log(`FAIL ${name}: ${e.message}`); }
   try {
-    if (/heap store: typed|spinlock open$|spinlock stored$|split distributes/.test(name))
+    if (/heap store: typed|spinlock open$|spinlock stored$|split distributes|parallel split/.test(name))
       await infoviewEval(vs, `document.querySelector('[data-iris-proof-mode-widget] article')?.scrollIntoView({ block: 'center' })`);
     const s = await vs.workbench.send('Page.captureScreenshot', { format: 'png' });
     writeFileSync(`${vs.run}/${String(++shots).padStart(2, '0')}-${name.replace(/\W+/g, '-')}.png`, Buffer.from(s.data, 'base64')); } catch {}
@@ -354,6 +354,22 @@ try {
     assert(w.changes.map(r => r.name).join(' ') === 'HQ HS', 'shared persistent resources stay quiet');
     assert(w.changes.every(r => r.status === 'distributed' && r.text === '↳ isplitr: goal 2'), 'spatial destinations');
     assert(w.targets.length === 2 &&  /goal 1 ⊢\s*P/.test(w.targets[0]) && /goal 2 ⊢\s*R ∗ S/.test(w.targets[1]), 'both resulting targets in order');
+    return w;
+  });
+
+  await check('parallel split routes ownership to two threads and a continuation', async () => {
+    await at('widget-position-par-split');
+    const w = await waitWidget('parallel ownership split', w => w.tactics?.some(t => t.startsWith('iapply wp_par')));
+    assert(w.cards.length === 1 && w.changes.length === 3, 'one before-card with three routed resources');
+    for (const [name, goal] of [['Hl1', 1], ['Hl2', 2], ['K', 3]]) {
+      const row = w.changes.find(r => r.name === name);
+      assert(row?.status === 'distributed' && row.text === `↳ iapply: goal ${goal}`, `${name} must go only to goal ${goal}`);
+    }
+    assert(w.targets.length === 3, 'all three resulting targets must be visible');
+    assert(/goal 1 ⊢\s*WP/.test(w.targets[0]) && w.targets[0].includes('l1 ← #21'), 'first thread target');
+    assert(/goal 2 ⊢\s*WP/.test(w.targets[1]) && w.targets[1].includes('l2 ← #2'), 'second thread target');
+    assert(/goal 3 ⊢/.test(w.targets[2]) && ['l1 ↦ some #21', 'l2 ↦ some #2', 'Φ'].every(s => w.targets[2].includes(s)),
+      'continuation receives both resulting cells');
     return w;
   });
 

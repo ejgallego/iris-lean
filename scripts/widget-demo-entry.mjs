@@ -9,6 +9,7 @@ const positions = [
   ["heapStore", "Heap · 1. Before store", "Write v' to l, then read it back. Hl owns the cell being updated; Hframe owns a second cell that must survive unchanged. Hover over l, E, or the bound return value r."],
   ["heapLoad", "Heap · 2. After store", "wp_store changed Hl from l ↦ some v to l ↦ some v'. Hframe still owns l' ↦ some w. The remaining program reads l."],
   ["heapPost", "Heap · 3. After load", "The read returned v'. The target now asserts that result and ownership of both cells. iframe and itrivial finish the proof."],
+  ["parSplit", "Par · Ownership split", "wp_par sends Hl1 to thread 1, Hl2 to thread 2, and K to the continuation (goal 3)."],
   ["spinOpen", "SpinLock · 1. Open invariant", "Inside release_spec: Hinv is persistent. Hpt owns the lock cell, Hcond records its old state, and Hl/HR supply the ghost token and protected resource. The target stores false under a reduced mask."],
   ["spinStored", "SpinLock · 2. After store", "Hpt now owns the unlocked cell. The target restores the invariant and mask before returning to the caller's continuation; Hl and HR are needed to close the invariant."],
   ["spinFrame", "SpinLock · 3. Frame the cell", "iframe Hpt: the annotation under Hpt says “no longer in context”; the target reduces."],
