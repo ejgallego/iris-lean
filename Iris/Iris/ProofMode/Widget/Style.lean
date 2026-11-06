@@ -194,10 +194,13 @@ public def glyph : Entry := style #[
 public def annotation (hasTerm : Bool) : Entry := style #[
   ("gridColumn", "1 / -1"), ("display", if hasTerm then "grid" else "block"),
   ("gridTemplateColumns", "minmax(0, max-content) minmax(0, 1fr)"),
-  ("columnGap", "4px"), ("minWidth", "0"), ("paddingLeft", "1em"),
+  ("minWidth", "0"), ("paddingLeft", "1em"),
   ("color", muted), ("fontFamily", editorFont), ("fontSize", editorSize),
   ("lineHeight", "1.3"), ("overflowWrap", "anywhere")
 ]
+
+/-- Keep the lead's separating space visible at the boundary between grid cells. -/
+public def annotationLead : Entry := style #[("whiteSpace", "break-spaces")]
 
 public def changeSummary : Entry := style #[
   ("color", muted), ("minWidth", "0"), ("whiteSpace", "nowrap"),

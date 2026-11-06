@@ -373,6 +373,24 @@ try {
     return w;
   });
 
+  await check('annotation leads retain a rendered space before native terms', async () => {
+    const states = [];
+    for (const marker of ['heap-store', 'par-split', 'contexts']) {
+      await at('widget-position-' + marker);
+      await waitWidget('spaced annotations at ' + marker, w => marker === 'heap-store'
+        ? w.tactics?.includes('wp_store') && w.text.includes('Hframe')
+        : marker === 'par-split' ? w.tactics?.some(t => t.startsWith('iapply wp_par'))
+        : w.tactics?.includes('isplitr [HQ HS]'));
+      const rows = await infoviewEval(vs, `(() => [...document.querySelectorAll('[data-iris-proof-mode-widget] [data-annotation-kind]')]
+        .filter(e => e.querySelector('[data-term-id]'))
+        .map(e => ({ kind: e.dataset.annotationKind, lead: e.firstElementChild.innerText })))()`);
+      assert(rows.length >= 2 && rows.every(r => r.lead.endsWith(' ')),
+        `rendered annotation separator lost at ${marker}: ${JSON.stringify(rows)}`);
+      states.push({ marker, rows });
+    }
+    return states;
+  });
+
   await check('before-state label at an after-side position; none outside a tactic', async () => {
     const comment = await vs.driver({ op: 'find', marker: 'widget-position-heap-store', offset: 0 });
     await vs.driver({ op: 'cursor', line: comment.line, character: 4 });

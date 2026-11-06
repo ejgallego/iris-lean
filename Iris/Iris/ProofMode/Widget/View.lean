@@ -94,7 +94,7 @@ def annotationRow : RuntimeM (Client.Component AnnotationProps) := do
       data-resource-name={(← JsValue.ofString props.resourceName)}
       data-after-goal-id={(← JsValue.ofString (annotation.branchId?.getD ""))}
       style={(← Style.annotation annotation.term?.isSome)}>
-      <span>{Html.text ("↳ " ++ annotation.lead)}</span>{value}</div>})
+      <span style={(← Style.annotationLead)}>{Html.text ("↳ " ++ annotation.lead)}</span>{value}</div>})
 
 structure HypothesisProps where
   context : Client.Context
